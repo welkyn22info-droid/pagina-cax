@@ -1,0 +1,25 @@
+# Código y datos reales de CAXDAC — nunca suben a este repositorio (sección 18)
+api/legado/*.py
+datos/
+respaldos/
+
+# Entorno
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
+
+# Editor / SO
+.DS_Store
+.vscode/
+*.swp

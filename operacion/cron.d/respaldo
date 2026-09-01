@@ -1,0 +1,4 @@
+# Respaldo diario a las 20:00, después del cierre de la operación
+# (sección 16). Instalar con: crontab operacion/cron.d/respaldo
+# (ajustar la ruta absoluta al proyecto antes de instalar).
+0 20 * * * cd /ruta/al/proyecto/plataforma-riesgo && ./operacion/respaldo.sh >> /var/log/respaldo-riesgo.log 2>&1

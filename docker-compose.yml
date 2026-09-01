@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: riesgo
+      POSTGRES_USER: ${DB_SUPERUSUARIO}
+      POSTGRES_PASSWORD: ${DB_CLAVE_SUPER}
+      TZ: America/Bogota
+    volumes:
+      - datos_pg:/var/lib/postgresql/data
+      - ./db/migraciones:/docker-entrypoint-initdb.d:ro
+      - ./respaldos:/respaldos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_SUPERUSUARIO} -d riesgo"]
+      interval: 10s
+      retries: 5
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_riesgo:${DB_CLAVE_APP}@db:5432/riesgo
+      SECRETO_JWT: ${SECRETO_JWT}
+      RUTA_ARCHIVOS_ORIGINALES: /datos/originales
+      TZ: America/Bogota
+    volumes:
+      - ./api/legado:/app/legado:ro
+      - datos_originales:/datos/originales
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      TZ: America/Bogota
+    depends_on: [api]
+
+  proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports: ["443:443", "80:80"]
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./proxy/certs:/etc/nginx/certs:ro
+    depends_on: [web, api]
+
+volumes:
+  datos_pg:
+  datos_originales:

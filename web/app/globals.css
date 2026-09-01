@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #16202a;
+  --ink-soft: #3d4b57;
+  --paper: #eff1f3;
+  --surface: #ffffff;
+  --rule: #c9cfd4;
+  --rule-soft: #dde2e6;
+  --teal: #0f6e56;
+  --teal-pale: #e3f0eb;
+  --amber: #8a5a0b;
+  --amber-pale: #fbf0dc;
+  --danger: #a32d2d;
+  --danger-pale: #fbe9e9;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.cifra {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
