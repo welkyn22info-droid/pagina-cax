@@ -2,12 +2,13 @@
 destino del esquema, dejando lo no reconocido en campos_extra (sección 9)."""
 from __future__ import annotations
 
-import csv
+import datetime
 import io
 import re
 import unicodedata
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from app.ingesta.esquemas import EsquemaInsumo
 
@@ -61,6 +62,10 @@ def _parsear_numero_colombiano(valor) -> float | None:
 def _parsear_fecha(valor):
     if valor is None or (isinstance(valor, float) and pd.isna(valor)):
         return None
+    if isinstance(valor, datetime.datetime):
+        return valor.date()
+    if isinstance(valor, datetime.date):
+        return valor
     # Intenta primero ISO (formato de la API y de flujos_pasivo en los
     # fixtures); si no calza, cae a dd/mm/aaaa (formato de la interfaz,
     # sección 12) sin que pandas emita la advertencia de ambigüedad.
@@ -79,14 +84,38 @@ class ResultadoLectura:
         self.encabezados_originales = encabezados_originales
 
 
+def _leer_excel_streaming(contenido: bytes, esquema: EsquemaInsumo) -> pd.DataFrame:
+    """Lee un .xlsx con openpyxl en modo read_only: itera fila por fila en
+    vez de materializar todo el libro en memoria de una vez, como hace
+    pd.read_excel. Con archivos grandes (decenas de miles de filas) esto
+    evita el pico de memoria y es notablemente más rápido — la regla de
+    "Excel grandes" de la guía de arquitectura. Además conserva el tipo
+    nativo de cada celda (número, fecha) en vez de forzar todo a texto."""
+    libro = load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
+    try:
+        hoja = libro.worksheets[esquema.hoja] if isinstance(esquema.hoja, int) else libro[esquema.hoja]
+        filas_iter = hoja.iter_rows(values_only=True)
+        for _ in range(esquema.filas_encabezado):
+            next(filas_iter, None)
+        encabezados = [str(c).strip() if c is not None else "" for c in next(filas_iter, ())]
+        filas = [fila for fila in filas_iter if any(v is not None for v in fila)]
+    finally:
+        libro.close()
+    return pd.DataFrame(filas, columns=encabezados if encabezados else None)
+
+
 def leer_archivo(nombre_archivo: str, contenido: bytes, esquema: EsquemaInsumo) -> ResultadoLectura:
     """Lee TXT o Excel según la extensión (verificando el contenido) y
     devuelve un DataFrame con las columnas de destino del esquema más
     campos_extra con lo que no se reconoce. No valida obligatoriedad —
     eso lo hace validador.py."""
-    es_excel = nombre_archivo.lower().endswith((".xlsx", ".xls"))
+    nombre_min = nombre_archivo.lower()
 
-    if es_excel:
+    if nombre_min.endswith(".xlsx"):
+        crudo = _leer_excel_streaming(contenido, esquema)
+    elif nombre_min.endswith(".xls"):
+        # Formato binario legado: openpyxl no lo lee: cae al motor
+        # tradicional de pandas (xlrd), sin streaming.
         crudo = pd.read_excel(
             io.BytesIO(contenido), sheet_name=esquema.hoja, header=esquema.filas_encabezado, dtype=str,
         )

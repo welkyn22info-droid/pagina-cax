@@ -233,3 +233,24 @@ ahora: es una dependencia de herramienta de build (procesa el CSS propio
 del proyecto en `next build`/`next dev`, no CSS de terceros ni tráfico de
 red), en un servidor de red interna. Revisar cuando exista un parche de
 `postcss` compatible con Next 15, o al planear la migración a Next 16.
+
+## 16. Lectura de `.xlsx` en streaming (`openpyxl read_only`) en vez de `pd.read_excel`
+
+Mejora aplicada a partir de una guía externa de arquitectura que el
+usuario compartió (Next.js + Postgres + Python), en la sección "Excel
+grandes: leer solo lo necesario". `app/ingesta/lector.py` usaba
+`pd.read_excel(..., dtype=str)`, que materializa todo el libro en memoria
+de una sola vez y fuerza cada celda a texto — con archivos de decenas de
+miles de filas eso es el pico de memoria más alto posible, y de paso hace
+pasar números y fechas que Excel ya trae tipados por el parser de texto
+colombiano sin necesidad.
+
+Se cambia a `openpyxl.load_workbook(..., read_only=True)` con
+`iter_rows()`, que itera fila por fila en vez de construir el árbol
+completo del libro, y conserva el tipo nativo de cada celda (un
+`datetime` de Excel llega como `datetime`, no como texto a reparsear).
+`_parsear_fecha` se ajustó para aceptar `datetime`/`date` nativos
+directamente. El formato legado `.xls` (binario, no soportado por
+openpyxl) sigue usando `pd.read_excel` sin streaming — es un formato en
+extinción y no vale la pena una segunda implementación para él. Probado
+con un archivo sintético de 50.000 filas (`api/pruebas/test_ingesta.py`).

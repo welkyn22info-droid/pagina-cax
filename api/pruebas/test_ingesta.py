@@ -78,3 +78,46 @@ def test_archivo_vacio_se_rechaza(cliente, token_analista):
     r = _subir(cliente, token_analista, contenido, "posiciones_vacio.txt", "posiciones", "2026-08-27")
     cuerpo = r.json()
     assert cuerpo["estado"] == "RECHAZADO"
+
+
+def test_carga_valida_desde_excel(cliente, token_analista):
+    # El lector de .xlsx usa openpyxl en modo streaming (read_only), no
+    # pd.read_excel — esta prueba cubre ese camino, que antes no tenía
+    # ninguna prueba (solo TXT).
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["PORTAFOLIO", "NEMOTECNICO", "EMISOR", "NOMINAL", "MONEDA"])
+    ws.append(["PORT1", "TESJUL27", "REPCOL", 1234567.89, "COP"])
+    ws.append(["PORT2", "BONOECOPET30", "ECOPET", 2000000, "COP"])
+    buffer = io.BytesIO()
+    wb.save(buffer)
+
+    r = _subir(cliente, token_analista, buffer.getvalue(), "posiciones_20260826.xlsx", "posiciones", "2026-08-26")
+    cuerpo = r.json()
+    assert cuerpo["estado"] == "VALIDADO", cuerpo
+    assert cuerpo["filas_validas"] == 2
+
+
+def test_excel_conserva_numero_nativo_sin_pasar_por_formato_colombiano(cliente, token_analista):
+    # Un nominal como float nativo de Excel (1234567.89) no debe
+    # interpretarse como "1.234.567,89 colombiano" ni corromperse.
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["PORTAFOLIO", "NEMOTECNICO", "NOMINAL"])
+    ws.append(["PORT1", "TESJUL27", 1234567.89])
+    buffer = io.BytesIO()
+    wb.save(buffer)
+
+    r = _subir(cliente, token_analista, buffer.getvalue(), "posiciones_20260825.xlsx", "posiciones", "2026-08-25")
+    assert r.json()["estado"] == "VALIDADO"
+
+    r2 = cliente.get(
+        "/cargas",
+        headers={"Authorization": f"Bearer {token_analista}"},
+        params={"fecha": "2026-08-25"},
+    )
+    assert r2.json()[0]["filas_validas"] == 1
