@@ -60,6 +60,7 @@ export default function TablaResultados<T extends object>({
       {busquedaPor && (
         <input
           type="text"
+          aria-label="Buscar"
           placeholder="Buscar…"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}

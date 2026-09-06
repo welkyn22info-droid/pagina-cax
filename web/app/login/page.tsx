@@ -38,8 +38,9 @@ export default function PaginaLogin() {
 
         <form onSubmit={enviar} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Correo</label>
+            <label htmlFor="correo" className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Correo</label>
             <input
+              id="correo"
               type="email"
               required
               value={correo}
@@ -49,8 +50,9 @@ export default function PaginaLogin() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña</label>
+            <label htmlFor="clave" className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña</label>
             <input
+              id="clave"
               type="password"
               required
               value={clave}

@@ -46,7 +46,7 @@ export default function PaginaAuditoria() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-lg font-semibold">Auditoría</h1>
-        <select value={accion} onChange={(e) => setAccion(e.target.value)} className="border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
+        <select aria-label="Filtrar por acción" value={accion} onChange={(e) => setAccion(e.target.value)} className="border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
           <option value="">Todas las acciones</option>
           {Object.entries(ETIQUETAS_ACCION).map(([clave, etiqueta]) => (
             <option key={clave} value={clave}>{etiqueta}</option>

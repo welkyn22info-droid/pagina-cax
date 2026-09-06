@@ -34,24 +34,28 @@ export default function PaginaCambiarClave() {
         </p>
         <form onSubmit={enviar} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña temporal</label>
+            <label htmlFor="clave-actual" className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña temporal</label>
             <input
+              id="clave-actual"
               type="password"
               required
               value={claveActual}
               onChange={(e) => setClaveActual(e.target.value)}
               className="w-full border border-[var(--rule)] rounded-md px-3 py-2 text-sm"
+              autoComplete="current-password"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña nueva</label>
+            <label htmlFor="clave-nueva" className="block text-sm font-medium text-[var(--ink-soft)] mb-1">Contraseña nueva</label>
             <input
+              id="clave-nueva"
               type="password"
               required
               minLength={12}
               value={claveNueva}
               onChange={(e) => setClaveNueva(e.target.value)}
               className="w-full border border-[var(--rule)] rounded-md px-3 py-2 text-sm"
+              autoComplete="new-password"
             />
           </div>
           {error && <div className="text-sm text-[var(--danger)] bg-[var(--danger-pale)] rounded-md px-3 py-2">{error}</div>}

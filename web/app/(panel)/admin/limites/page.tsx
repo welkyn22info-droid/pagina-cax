@@ -73,37 +73,37 @@ export default function PaginaLimites() {
       {mostrarForm && (
         <form onSubmit={crear} className="bg-white border border-[var(--rule)] rounded-lg p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Tipo</label>
-            <select value={tipo} onChange={(e) => { setTipo(e.target.value as "emisor" | "contraparte"); setEntidadId(""); }} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
+            <label htmlFor="limite-tipo" className="block text-xs text-[var(--ink-soft)] mb-1">Tipo</label>
+            <select id="limite-tipo" value={tipo} onChange={(e) => { setTipo(e.target.value as "emisor" | "contraparte"); setEntidadId(""); }} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
               <option value="emisor">Emisor</option>
               <option value="contraparte">Contraparte</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Entidad</label>
-            <select required value={entidadId} onChange={(e) => setEntidadId(Number(e.target.value))} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
+            <label htmlFor="limite-entidad" className="block text-xs text-[var(--ink-soft)] mb-1">Entidad</label>
+            <select id="limite-entidad" required value={entidadId} onChange={(e) => setEntidadId(Number(e.target.value))} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
               <option value="">Seleccione…</option>
               {(entidades || []).map((en) => <option key={en.id} value={en.id}>{en.nombre} ({en.codigo})</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Base</label>
-            <select value={base} onChange={(e) => setBase(e.target.value as "monto" | "porcentaje_portafolio")} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
+            <label htmlFor="limite-base" className="block text-xs text-[var(--ink-soft)] mb-1">Base</label>
+            <select id="limite-base" value={base} onChange={(e) => setBase(e.target.value as "monto" | "porcentaje_portafolio")} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
               <option value="monto">Monto</option>
               <option value="porcentaje_portafolio">% del portafolio</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">{base === "monto" ? "Valor límite ($)" : "Valor límite (%)"}</label>
-            <input required type="number" step="any" value={valorLimite} onChange={(e) => setValorLimite(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
+            <label htmlFor="limite-valor" className="block text-xs text-[var(--ink-soft)] mb-1">{base === "monto" ? "Valor límite ($)" : "Valor límite (%)"}</label>
+            <input id="limite-valor" required type="number" step="any" value={valorLimite} onChange={(e) => setValorLimite(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Umbral de alerta (0-1)</label>
-            <input required type="number" step="0.01" min="0" max="1" value={umbral} onChange={(e) => setUmbral(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
+            <label htmlFor="limite-umbral" className="block text-xs text-[var(--ink-soft)] mb-1">Umbral de alerta (0-1)</label>
+            <input id="limite-umbral" required type="number" step="0.01" min="0" max="1" value={umbral} onChange={(e) => setUmbral(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Vigente desde</label>
-            <input required type="date" value={vigenteDesde} onChange={(e) => setVigenteDesde(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
+            <label htmlFor="limite-desde" className="block text-xs text-[var(--ink-soft)] mb-1">Vigente desde</label>
+            <input id="limite-desde" required type="date" value={vigenteDesde} onChange={(e) => setVigenteDesde(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm cifra" />
           </div>
           <div className="sm:col-span-3">
             <button type="submit" className="text-sm bg-[var(--teal)] text-white rounded-md px-3 py-1.5">Crear límite</button>

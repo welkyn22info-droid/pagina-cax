@@ -60,16 +60,16 @@ export default function PaginaUsuarios() {
       {mostrarForm && (
         <form onSubmit={crear} className="bg-white border border-[var(--rule)] rounded-lg p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Correo</label>
-            <input required type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm" />
+            <label htmlFor="usuario-correo" className="block text-xs text-[var(--ink-soft)] mb-1">Correo</label>
+            <input id="usuario-correo" required type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Nombre</label>
-            <input required value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm" />
+            <label htmlFor="usuario-nombre" className="block text-xs text-[var(--ink-soft)] mb-1">Nombre</label>
+            <input id="usuario-nombre" required value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Rol</label>
-            <select value={rol} onChange={(e) => setRol(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
+            <label htmlFor="usuario-rol" className="block text-xs text-[var(--ink-soft)] mb-1">Rol</label>
+            <select id="usuario-rol" value={rol} onChange={(e) => setRol(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm">
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>

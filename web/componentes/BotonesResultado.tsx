@@ -103,10 +103,10 @@ function ModalPublicar({ recurso, corridaId, onCerrar }: { recurso: string; corr
         ) : (
           <>
             <h3 className="font-semibold mb-4">Publicar resultado</h3>
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Título</label>
-            <input value={titulo} onChange={(e) => setTitulo(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm mb-3" />
-            <label className="block text-xs text-[var(--ink-soft)] mb-1">Comentario (opcional)</label>
-            <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm mb-3" rows={2} />
+            <label htmlFor="pub-titulo" className="block text-xs text-[var(--ink-soft)] mb-1">Título</label>
+            <input id="pub-titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm mb-3" />
+            <label htmlFor="pub-comentario" className="block text-xs text-[var(--ink-soft)] mb-1">Comentario (opcional)</label>
+            <textarea id="pub-comentario" value={comentario} onChange={(e) => setComentario(e.target.value)} className="w-full border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm mb-3" rows={2} />
             <label className="block text-xs text-[var(--ink-soft)] mb-1">Destinatarios</label>
             <div className="border border-[var(--rule)] rounded-md max-h-40 overflow-y-auto mb-3">
               {(usuarios || []).map((u) => (
