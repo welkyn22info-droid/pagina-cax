@@ -22,6 +22,7 @@ const ETIQUETAS_ACCION: Record<string, string> = {
   cierre_sesion: "Cierre de sesión",
   carga: "Carga de insumo",
   ejecucion: "Ejecución",
+  confirmacion: "Confirmación de resultado",
   anulacion: "Anulación de corrida",
   publicacion: "Publicación",
   acuse: "Acuse de lectura",

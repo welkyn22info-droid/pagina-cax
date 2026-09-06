@@ -21,8 +21,9 @@ GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA staging, proc, res, audit TO app_ri
 -- Actualizaciones puntuales que el borrador original de la sección 15 no
 -- cubría y que el flujo real sí necesita:
 GRANT UPDATE ON staging.carga TO app_riesgo;         -- ruta_archivo tras guardar en disco
-GRANT UPDATE ON proc.corrida TO app_riesgo;           -- EJECUTANDO -> OK/ERROR/ANULADA
+GRANT UPDATE ON proc.corrida TO app_riesgo;           -- EJECUTANDO -> PENDIENTE_CONFIRMACION/OK/ERROR/ANULADA
 GRANT UPDATE ON audit.destinatario TO app_riesgo;     -- acuse de lectura (visto_en)
+GRANT UPDATE, DELETE ON proc.resultado_borrador TO app_riesgo;  -- confirmar/descartar (decisión 17)
 
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA core, staging, proc, res, audit TO app_riesgo;
 

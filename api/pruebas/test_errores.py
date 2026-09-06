@@ -1,5 +1,8 @@
 """Errores (sección 17): un proceso que lanza excepción a mitad de camino
-no debe dejar filas parciales en res."""
+no debe dejar filas parciales en res. Con el borrador (decisión 17), un
+valor que la tabla destino rechaza pasa la ejecución (guardar_borrador no
+valida tipos, solo serializa a jsonb) y falla recién al confirmar — ahí es
+donde no debe quedar nada parcial ni la corrida atascada sin explicación."""
 import io
 import time
 
@@ -9,7 +12,7 @@ import psycopg
 from app.config import config
 
 
-def test_error_a_mitad_de_camino_no_deja_filas_parciales(cliente, token_analista, monkeypatch):
+def test_error_a_mitad_de_camino_no_deja_filas_parciales(cliente, token_analista, token_revisor, monkeypatch):
     from app.motor.procesos import pasivo as modulo_pasivo
 
     def calculo_con_fila_invalida(flujos, tasa_descuento, fecha_valoracion):
@@ -38,10 +41,18 @@ def test_error_a_mitad_de_camino_no_deja_filas_parciales(cliente, token_analista
     detalle = None
     for _ in range(50):
         detalle = cliente.get(f"/corridas/{corrida_id}", headers={"Authorization": f"Bearer {token_analista}"}).json()
-        if detalle["estado"] in ("OK", "ERROR"):
+        if detalle["estado"] in ("PENDIENTE_CONFIRMACION", "ERROR"):
             break
         time.sleep(0.1)
 
+    # guardar_borrador serializa a jsonb sin validar tipos: el valor
+    # inválido todavía no rompe nada en esta etapa.
+    assert detalle["estado"] == "PENDIENTE_CONFIRMACION"
+
+    r = cliente.post(f"/corridas/{corrida_id}/confirmar", headers={"Authorization": f"Bearer {token_revisor}"})
+    assert r.status_code == 422, r.text
+
+    detalle = cliente.get(f"/corridas/{corrida_id}", headers={"Authorization": f"Bearer {token_analista}"}).json()
     assert detalle["estado"] == "ERROR"
     assert detalle["mensaje_error"]
 

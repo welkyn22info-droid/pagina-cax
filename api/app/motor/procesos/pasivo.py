@@ -1,4 +1,4 @@
-from app.motor.io import escribir_resultado, leer_insumo
+from app.motor.io import guardar_borrador, leer_insumo
 
 # Cambia a `from legado.pasivo import calcular_pasivo` cuando llegue el
 # código real (ver DECISIONES.md, decisión 2).
@@ -15,4 +15,4 @@ def ejecutar(conn, fecha_datos, corrida_id: int, parametros: dict) -> int:
 
     resultado = calcular_pasivo(flujos, tasa_descuento, fecha_datos)
 
-    return escribir_resultado(conn, "res.pasivo", resultado, corrida_id, fecha_datos)
+    return guardar_borrador(conn, "res.pasivo", resultado, corrida_id)

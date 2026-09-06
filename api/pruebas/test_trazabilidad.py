@@ -30,11 +30,14 @@ def test_corrida_registra_las_cargas_exactas_que_uso(cliente, token_analista):
     import time
     for _ in range(50):
         detalle = cliente.get(f"/corridas/{corrida_id}", headers={"Authorization": f"Bearer {token_analista}"}).json()
-        if detalle["estado"] in ("OK", "ERROR"):
+        if detalle["estado"] in ("PENDIENTE_CONFIRMACION", "ERROR"):
             break
         time.sleep(0.1)
 
-    assert detalle["estado"] == "OK"
+    # La trazabilidad de insumos se registra al iniciar la corrida, antes de
+    # que exista resultado que confirmar (decisión 17) — no hace falta
+    # confirmar para verificarla.
+    assert detalle["estado"] == "PENDIENTE_CONFIRMACION"
     cargas_usadas = {i["carga_id"] for i in detalle["insumos"] if i["carga_id"] is not None}
     assert cargas_usadas == {carga_pos_id, carga_pre_id}
 

@@ -1,4 +1,4 @@
-from app.motor.io import escribir_resultado, leer_insumo
+from app.motor.io import guardar_borrador, leer_insumo
 
 # Envoltorio delgado: leer, calcular, escribir. Nada más (sección 8).
 # Este import es la única línea que cambia cuando llegue el código real a
@@ -15,5 +15,7 @@ def ejecutar(conn, fecha_datos, corrida_id: int, parametros: dict) -> int:
     # 2. Calcular — firma original, intacta
     resultado = calcular_valoracion(posiciones, precios)
 
-    # 3. Escribir — antes era resultado.to_excel("valoracion_20260830.xlsx")
-    return escribir_resultado(conn, "res.valoracion", resultado, corrida_id, fecha_datos)
+    # 3. Guardar como borrador — el motor todavía no lo escribe en res.valoracion
+    # (antes era resultado.to_excel("valoracion_20260830.xlsx")); un revisor
+    # audita y confirma (decisión 17) antes de que sea oficial.
+    return guardar_borrador(conn, "res.valoracion", resultado, corrida_id)

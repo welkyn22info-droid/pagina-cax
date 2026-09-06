@@ -64,7 +64,7 @@ def test_sin_token_es_rechazado(cliente):
     assert r.json()["error"] == "sin_token"
 
 
-def test_consulta_no_lee_no_publicado_ni_conectandose_directo(cliente, token_analista, token_consulta):
+def test_consulta_no_lee_no_publicado_ni_conectandose_directo(cliente, token_analista, token_revisor, token_consulta):
     # Genera una corrida OK de valoración que nunca se publica.
     cliente.post(
         "/cargas", headers={"Authorization": f"Bearer {token_analista}"},
@@ -76,12 +76,24 @@ def test_consulta_no_lee_no_publicado_ni_conectandose_directo(cliente, token_ana
         files={"archivo": ("pre.txt", b"NEMOTECNICO|PRECIO_LIMPIO\nTESJUL27|98,50\n", "text/plain")},
         data={"tipo_insumo": "precios", "fecha_datos": "2026-08-21"},
     )
-    cliente.post(
+    r = cliente.post(
         "/corridas", headers={"Authorization": f"Bearer {token_analista}"},
         json={"proceso": "valoracion", "fecha_datos": "2026-08-21", "parametros": {}},
     )
+    corrida_id = r.json()["corrida_id"]
+
     import time
-    time.sleep(0.5)
+    for _ in range(50):
+        detalle = cliente.get(f"/corridas/{corrida_id}", headers={"Authorization": f"Bearer {token_analista}"}).json()
+        if detalle["estado"] in ("PENDIENTE_CONFIRMACION", "ERROR"):
+            break
+        time.sleep(0.1)
+    assert detalle["estado"] == "PENDIENTE_CONFIRMACION"
+
+    # El resultado del cálculo por sí solo no basta (decisión 17): confirmar
+    # es lo que lo deja OK en res.valoracion, todavía sin publicar.
+    r = cliente.post(f"/corridas/{corrida_id}/confirmar", headers={"Authorization": f"Bearer {token_revisor}"})
+    assert r.status_code == 200, r.text
 
     # Vía API: consulta no ve nada (RLS ya lo protege).
     r = cliente.get("/resultados/valoracion?fecha=2026-08-21", headers={"Authorization": f"Bearer {token_consulta}"})

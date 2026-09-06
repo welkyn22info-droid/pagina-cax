@@ -1,6 +1,7 @@
 const ESTILOS: Record<string, string> = {
   PENDIENTE: "bg-gray-100 text-gray-600",
   EJECUTANDO: "bg-[var(--amber-pale)] text-[var(--amber)]",
+  PENDIENTE_CONFIRMACION: "bg-[var(--amber-pale)] text-[var(--amber)]",
   OK: "bg-[var(--teal-pale)] text-[var(--teal)]",
   ERROR: "bg-[var(--danger-pale)] text-[var(--danger)]",
   ANULADA: "bg-gray-100 text-gray-500 line-through",
@@ -9,6 +10,7 @@ const ESTILOS: Record<string, string> = {
 const ETIQUETAS: Record<string, string> = {
   PENDIENTE: "Pendiente",
   EJECUTANDO: "Ejecutando",
+  PENDIENTE_CONFIRMACION: "Por confirmar",
   OK: "Correcto",
   ERROR: "Con error",
   ANULADA: "Anulada",

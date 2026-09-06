@@ -1,7 +1,7 @@
 import pandas as pd
 
 from app.motor.ejecutor import corrida_vigente
-from app.motor.io import escribir_resultado, leer_resultado
+from app.motor.io import guardar_borrador, leer_resultado
 
 # Cambia a `from legado.funding import calcular_funding_ratio` cuando
 # llegue el código real (ver DECISIONES.md, decisión 2).
@@ -27,4 +27,4 @@ def ejecutar(conn, fecha_datos, corrida_id: int, parametros: dict) -> int:
         "corrida_activos": c_act,
         "corrida_pasivos": c_pas,
     }])
-    return escribir_resultado(conn, "res.funding_ratio", salida, corrida_id, fecha_datos)
+    return guardar_borrador(conn, "res.funding_ratio", salida, corrida_id)

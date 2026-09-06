@@ -21,7 +21,7 @@ FECHAS = ["2026-07-31", "2026-08-15", "2026-08-31"]
 TOLERANCIA = 1e-9
 
 
-def _subir_y_ejecutar(cliente, token, fecha_compacta: str, fecha_iso: str):
+def _subir_y_ejecutar(cliente, token, token_confirma, fecha_compacta: str, fecha_iso: str):
     for tipo, prefijo in (("posiciones", "posiciones"), ("precios", "precios")):
         ruta = FIXTURES / f"{prefijo}_{fecha_compacta}.txt"
         with open(ruta, "rb") as f:
@@ -45,10 +45,17 @@ def _subir_y_ejecutar(cliente, token, fecha_compacta: str, fecha_iso: str):
 
     for _ in range(50):
         detalle = cliente.get(f"/corridas/{corrida_id}", headers={"Authorization": f"Bearer {token}"}).json()
-        if detalle["estado"] in ("OK", "ERROR"):
+        if detalle["estado"] in ("PENDIENTE_CONFIRMACION", "ERROR"):
             break
         time.sleep(0.1)
-    assert detalle["estado"] == "OK", detalle.get("mensaje_error")
+    assert detalle["estado"] == "PENDIENTE_CONFIRMACION", detalle.get("mensaje_error")
+
+    # El cálculo ya terminó pero todavía no está en res.* (decisión 17):
+    # confirmar es lo que lo escribe de verdad, que es lo que esta prueba
+    # de paridad necesita comparar. Confirmar requiere puede_publicar, que
+    # el analista que ejecutó no tiene — lo hace un revisor, como en la vida real.
+    r = cliente.post(f"/corridas/{corrida_id}/confirmar", headers={"Authorization": f"Bearer {token_confirma}"})
+    assert r.status_code == 200, r.text
     return corrida_id
 
 
@@ -74,12 +81,12 @@ def _calcular_directo(fecha_compacta: str) -> pd.DataFrame:
 
 
 @pytest.mark.parametrize("fecha_iso", FECHAS)
-def test_paridad_valoracion(cliente, token_analista, fecha_iso):
+def test_paridad_valoracion(cliente, token_analista, token_revisor, fecha_iso):
     fecha_compacta = fecha_iso.replace("-", "")  # '2026-07-31' -> '20260731', nombre de los fixtures
 
     esperado = _calcular_directo(fecha_compacta)
 
-    _subir_y_ejecutar(cliente, token_analista, fecha_compacta, fecha_iso)
+    _subir_y_ejecutar(cliente, token_analista, token_revisor, fecha_compacta, fecha_iso)
 
     r = cliente.get(f"/resultados/valoracion?fecha={fecha_iso}", headers={"Authorization": f"Bearer {token_analista}"})
     assert r.status_code == 200

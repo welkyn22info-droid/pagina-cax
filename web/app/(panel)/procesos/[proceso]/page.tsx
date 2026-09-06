@@ -7,11 +7,45 @@ import type { Corrida, ProcesoCatalogo } from "@/lib/api";
 import { formatearFechaHora, ultimoDiaHabil } from "@/lib/fechas";
 import SelectorFecha from "@/componentes/SelectorFecha";
 import EstadoCorrida from "@/componentes/EstadoCorrida";
+import { useUsuario } from "@/lib/hooks";
+import { puede } from "@/lib/sesion";
 
 interface CorridaDetalle extends Corrida {
   log_ejecucion: string | null;
   traza_error: string | null;
   insumos: { carga_id: number | null; tipo_insumo: string | null; nombre_archivo: string | null; corrida_origen: number | null; proceso_origen: string | null }[];
+  resultado_borrador: Record<string, unknown>[] | null;
+  confirmada_por: number | null;
+  confirmada_en: string | null;
+}
+
+function VistaPreviaBorrador({ filas }: { filas: Record<string, unknown>[] }) {
+  if (filas.length === 0) {
+    return <p className="text-sm text-[var(--ink-soft)]">El cálculo no produjo filas.</p>;
+  }
+  const columnas = Object.keys(filas[0]).filter((c) => c !== "corrida_id" && c !== "fecha_datos");
+  return (
+    <div className="overflow-x-auto border border-[var(--rule-soft)] rounded-md max-h-80">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-gray-50">
+          <tr className="border-b border-[var(--rule)]">
+            {columnas.map((c) => (
+              <th key={c} className="px-3 py-2 text-left font-medium text-[var(--ink-soft)] whitespace-nowrap">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((fila, idx) => (
+            <tr key={idx} className="border-b border-[var(--rule-soft)] last:border-0">
+              {columnas.map((c) => (
+                <td key={c} className="px-3 py-2 whitespace-nowrap cifra">{String(fila[c] ?? "—")}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 const ETIQUETAS_FALTANTE: Record<string, string> = {
@@ -31,7 +65,12 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
   const [fecha, setFecha] = useState(ultimoDiaHabil());
   const [corridaSeleccionada, setCorridaSeleccionada] = useState<number | null>(null);
   const [errorEjecucion, setErrorEjecucion] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [mostrarDescarte, setMostrarDescarte] = useState(false);
+  const [motivoDescarte, setMotivoDescarte] = useState("");
+  const [errorConfirmacion, setErrorConfirmacion] = useState<string | null>(null);
   const cliente = useQueryClient();
+  const { data: usuario } = useUsuario();
 
   const { data: catalogo } = useQuery<ProcesoCatalogo[]>({
     queryKey: ["procesos", fecha],
@@ -53,6 +92,7 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
 
   const idCorridaVisible = corridaSeleccionada ?? historico?.[0]?.id ?? null;
   const enEjecucion = historico?.some((c) => c.estado === "EJECUTANDO");
+  const pendienteDeConfirmar = historico?.some((c) => c.estado === "PENDIENTE_CONFIRMACION");
 
   const { data: detalle } = useQuery<CorridaDetalle>({
     queryKey: ["corrida", idCorridaVisible],
@@ -76,6 +116,40 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
     }
   }
 
+  function invalidarTrasCambioDeEstado() {
+    cliente.invalidateQueries({ queryKey: ["corridas", proceso, fecha] });
+    cliente.invalidateQueries({ queryKey: ["corrida", idCorridaVisible] });
+    cliente.invalidateQueries({ queryKey: ["procesos"] });
+    cliente.invalidateQueries({ queryKey: ["resultados"] });
+  }
+
+  async function confirmar() {
+    if (idCorridaVisible === null) return;
+    setErrorConfirmacion(null);
+    setConfirmando(true);
+    try {
+      await api(`/corridas/${idCorridaVisible}/confirmar`, { metodo: "POST" });
+      invalidarTrasCambioDeEstado();
+    } catch (err) {
+      setErrorConfirmacion(err instanceof ErrorApi ? err.message : "No se pudo confirmar el resultado.");
+    } finally {
+      setConfirmando(false);
+    }
+  }
+
+  async function descartar() {
+    if (idCorridaVisible === null || !motivoDescarte.trim()) return;
+    setErrorConfirmacion(null);
+    try {
+      await api(`/corridas/${idCorridaVisible}/anular`, { metodo: "POST", cuerpo: { motivo: motivoDescarte } });
+      setMostrarDescarte(false);
+      setMotivoDescarte("");
+      invalidarTrasCambioDeEstado();
+    } catch (err) {
+      setErrorConfirmacion(err instanceof ErrorApi ? err.message : "No se pudo descartar la corrida.");
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -88,7 +162,7 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
           <div>
             <button
               onClick={ejecutar}
-              disabled={faltanEsteProceso.length > 0 || enEjecucion}
+              disabled={faltanEsteProceso.length > 0 || enEjecucion || pendienteDeConfirmar}
               className="bg-[var(--teal)] text-white text-sm font-medium rounded-md px-4 py-2 disabled:opacity-50"
             >
               {enEjecucion ? "Ejecutando…" : "Ejecutar"}
@@ -96,6 +170,11 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
             {faltanEsteProceso.length > 0 && (
               <p className="text-xs text-[var(--danger)] mt-2">
                 No se puede ejecutar: {faltanEsteProceso.map(etiquetaFaltante).join(", ")}.
+              </p>
+            )}
+            {pendienteDeConfirmar && faltanEsteProceso.length === 0 && (
+              <p className="text-xs text-[var(--amber)] mt-2">
+                Hay un resultado pendiente de confirmar o descartar más abajo.
               </p>
             )}
             {errorEjecucion && <p className="text-xs text-[var(--danger)] mt-2">{errorEjecucion}</p>}
@@ -153,6 +232,53 @@ export default function PaginaDetalleProceso({ params }: { params: Promise<{ pro
               {detalle.mensaje_error && (
                 <div className="bg-[var(--danger-pale)] text-[var(--danger)] text-sm rounded-md px-3 py-2">
                   {detalle.mensaje_error}
+                </div>
+              )}
+
+              {detalle.estado === "PENDIENTE_CONFIRMACION" && (
+                <div className="border border-[var(--amber)] bg-[var(--amber-pale)] rounded-lg p-4 space-y-3">
+                  <p className="text-sm text-[var(--amber)] font-medium">
+                    El cálculo terminó pero todavía no está en la base. Audite las filas antes de confirmar.
+                  </p>
+                  <VistaPreviaBorrador filas={detalle.resultado_borrador || []} />
+                  {definicion && puede(usuario, definicion.modulo, "puede_publicar") && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={confirmar}
+                          disabled={confirmando}
+                          className="bg-[var(--teal)] text-white text-sm font-medium rounded-md px-4 py-2 disabled:opacity-50"
+                        >
+                          {confirmando ? "Confirmando…" : "Confirmar y cargar a la base"}
+                        </button>
+                        <button
+                          onClick={() => setMostrarDescarte((v) => !v)}
+                          className="text-sm border border-[var(--rule)] rounded-md px-4 py-2 hover:bg-white"
+                        >
+                          Descartar
+                        </button>
+                      </div>
+                      {mostrarDescarte && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={motivoDescarte}
+                            onChange={(e) => setMotivoDescarte(e.target.value)}
+                            placeholder="Motivo del descarte"
+                            className="flex-1 border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm"
+                          />
+                          <button
+                            onClick={descartar}
+                            disabled={!motivoDescarte.trim()}
+                            className="text-sm bg-[var(--danger)] text-white rounded-md px-3 py-1.5 disabled:opacity-50"
+                          >
+                            Confirmar descarte
+                          </button>
+                        </div>
+                      )}
+                      {errorConfirmacion && <p className="text-xs text-[var(--danger)]">{errorConfirmacion}</p>}
+                    </div>
+                  )}
                 </div>
               )}
 

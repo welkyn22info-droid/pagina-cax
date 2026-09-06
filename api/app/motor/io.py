@@ -4,6 +4,8 @@ solo habla con Postgres. Esto es lo que reemplaza pd.read_excel/to_excel en
 el código legado."""
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
@@ -67,3 +69,53 @@ def escribir_resultado(conn: Connection, tabla: str, df: pd.DataFrame, corrida_i
 
     salida.to_sql(nombre, conn, schema=esquema, if_exists="append", index=False, dtype=dtype or None)
     return len(salida)
+
+
+def guardar_borrador(conn: Connection, tabla_destino: str, df: pd.DataFrame, corrida_id: int) -> int:
+    """Guarda el resultado calculado como borrador en vez de escribirlo de
+    una vez en la tabla de resultados (DECISIONES.md, decisión 17): la
+    corrida queda PENDIENTE_CONFIRMACION hasta que alguien con permiso de
+    publicar audite las filas y confirme. `tabla_destino` es a dónde va a
+    parar cuando eso ocurra — ver `aplicar_borrador`."""
+    limpio = df.where(pd.notnull(df), None)
+    filas = limpio.to_dict(orient="records")
+    conn.execute(
+        text(
+            "INSERT INTO proc.resultado_borrador (corrida_id, tabla_destino, datos, filas) "
+            "VALUES (:corrida_id, :tabla, CAST(:datos AS jsonb), :filas)"
+        ),
+        {
+            "corrida_id": corrida_id,
+            "tabla": tabla_destino,
+            "datos": json.dumps(filas, default=str),
+            "filas": len(filas),
+        },
+    )
+    return len(filas)
+
+
+def aplicar_borrador(conn: Connection, corrida_id: int) -> int:
+    """Escribe de verdad en res.* el borrador de una corrida — lo que
+    dispara el botón 'Confirmar y cargar' (decisión 17). Reutiliza
+    escribir_resultado sin cambiarla: el borrador ya trae las mismas
+    columnas que espera la tabla destino."""
+    fila = conn.execute(
+        text(
+            "SELECT b.tabla_destino, b.datos, c.fecha_datos "
+            "FROM proc.resultado_borrador b "
+            "JOIN proc.corrida c ON c.id = b.corrida_id "
+            "WHERE b.corrida_id = :id AND b.aplicado_en IS NULL"
+        ),
+        {"id": corrida_id},
+    ).mappings().first()
+    if fila is None:
+        return 0
+
+    df = pd.DataFrame(fila["datos"])
+    filas_escritas = escribir_resultado(conn, fila["tabla_destino"], df, corrida_id, fila["fecha_datos"])
+
+    conn.execute(
+        text("UPDATE proc.resultado_borrador SET aplicado_en = now() WHERE corrida_id = :id"),
+        {"id": corrida_id},
+    )
+    return filas_escritas

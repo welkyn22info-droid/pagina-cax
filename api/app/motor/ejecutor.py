@@ -1,6 +1,8 @@
 """Ciclo de vida de una corrida (sección 10): valida requisitos, crea la
 corrida, la marca EJECUTANDO y confirma para que la interfaz la vea, y
-dispara la ejecución real del envoltorio en segundo plano."""
+dispara la ejecución real del envoltorio en segundo plano. Un cálculo
+exitoso deja la corrida en PENDIENTE_CONFIRMACION, no en OK — recién pasa
+a OK cuando alguien confirma el borrador (decisión 17)."""
 from __future__ import annotations
 
 import io
@@ -16,6 +18,7 @@ from sqlalchemy.engine import Connection
 
 from app.config import config
 from app.db import conexion_con_usuario, engine
+from app.motor.io import aplicar_borrador
 
 # "Un solo worker con cola interna" (sección 4) — no hace falta un
 # orquestador de tareas con este volumen (sección 10).
@@ -162,13 +165,15 @@ def _ejecutar_en_segundo_plano(usuario_id: int, proceso: str, fecha_datos, corri
             duracion_ms = int((time.monotonic() - inicio) * 1000)
             conn.execute(
                 text(
-                    "UPDATE proc.corrida SET estado = 'OK', finalizada_en = now(), duracion_ms = :dur, "
-                    "filas_resultado = :filas, log_ejecucion = :log WHERE id = :id"
+                    "UPDATE proc.corrida SET estado = 'PENDIENTE_CONFIRMACION', finalizada_en = now(), "
+                    "duracion_ms = :dur, filas_resultado = :filas, log_ejecucion = :log WHERE id = :id"
                 ),
                 {"dur": duracion_ms, "filas": filas, "log": captura.getvalue() or None, "id": corrida_id},
             )
             # Si algo de lo anterior lanza, el "with" hace rollback: la
-            # corrida no queda en OK con filas a medio escribir (sección 17).
+            # corrida no queda en PENDIENTE_CONFIRMACION con un borrador a
+            # medio escribir (sección 17). El resultado todavía no toca
+            # res.* — eso pasa recién en confirmar_corrida.
     except Exception as exc:
         duracion_ms = int((time.monotonic() - inicio) * 1000)
         traza = traceback.format_exc()
@@ -182,12 +187,61 @@ def _ejecutar_en_segundo_plano(usuario_id: int, proceso: str, fecha_datos, corri
             )
 
 
+class ErrorConfirmacion(Exception):
+    """El borrador no se pudo escribir en su tabla de destino (p. ej. un
+    valor que la columna real no acepta). La corrida no queda atascada en
+    PENDIENTE_CONFIRMACION sin explicación: pasa a ERROR con el motivo."""
+
+
+def confirmar_corrida(usuario_id: int, corrida_id: int) -> int | None:
+    """Aplica el borrador de una corrida PENDIENTE_CONFIRMACION: lo escribe
+    de verdad en res.* y recién ahí la corrida pasa a OK (decisión 17).
+    Devuelve None si la corrida no existe o no está en ese estado (por
+    ejemplo, otra persona ya la confirmó o descartó) — el llamador ya validó
+    el permiso de fondo. Lanza ErrorConfirmacion si el borrador no se pudo
+    aplicar."""
+    with conexion_con_usuario(usuario_id) as conn:
+        estado = conn.execute(
+            text("SELECT estado::text FROM proc.corrida WHERE id = :id"), {"id": corrida_id}
+        ).scalar()
+        if estado != "PENDIENTE_CONFIRMACION":
+            return None
+
+    try:
+        with conexion_con_usuario(usuario_id) as conn:
+            filas = aplicar_borrador(conn, corrida_id)
+            conn.execute(
+                text(
+                    "UPDATE proc.corrida SET estado = 'OK', confirmada_por = :uid, confirmada_en = now() "
+                    "WHERE id = :id"
+                ),
+                {"uid": usuario_id, "id": corrida_id},
+            )
+            # Si aplicar_borrador o el UPDATE fallan, el "with" hace
+            # rollback: la corrida no queda en OK con el borrador a medio
+            # aplicar, ni el borrador queda marcado aplicado sin haberlo
+            # escrito de verdad.
+    except Exception as exc:
+        with conexion_con_usuario(usuario_id) as conn:
+            conn.execute(
+                text(
+                    "UPDATE proc.corrida SET estado = 'ERROR', mensaje_error = :msg, traza_error = :traza "
+                    "WHERE id = :id"
+                ),
+                {"msg": f"Error al confirmar: {exc}", "traza": traceback.format_exc(), "id": corrida_id},
+            )
+        raise ErrorConfirmacion(str(exc)) from exc
+
+    return filas
+
+
 def anular_corrida(usuario_id: int, corrida_id: int, motivo: str) -> bool:
     with conexion_con_usuario(usuario_id) as conn:
         resultado = conn.execute(
             text(
                 "UPDATE proc.corrida SET estado = 'ANULADA', anulada_por = :uid, anulada_en = now(), "
-                "motivo_anulacion = :motivo WHERE id = :id AND estado IN ('OK','ERROR')"
+                "motivo_anulacion = :motivo "
+                "WHERE id = :id AND estado IN ('OK','ERROR','PENDIENTE_CONFIRMACION')"
             ),
             {"uid": usuario_id, "motivo": motivo, "id": corrida_id},
         )

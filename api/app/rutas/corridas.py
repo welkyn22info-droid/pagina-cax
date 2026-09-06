@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.db import conexion_con_usuario
-from app.motor.ejecutor import ErrorRequisitos, anular_corrida, iniciar_corrida
+from app.motor.ejecutor import ErrorConfirmacion, ErrorRequisitos, anular_corrida, confirmar_corrida, iniciar_corrida
 from app.motor.registro import PROCESOS
 from app.seguridad import UsuarioSesion, registrar_evento, usuario_actual
 
@@ -63,7 +63,8 @@ def detalle_corrida(corrida_id: int, usuario: UsuarioSesion = Depends(usuario_ac
             text(
                 "SELECT id, proceso, fecha_datos, estado::text, parametros, version_codigo, "
                 "disparada_por, iniciada_en, finalizada_en, duracion_ms, filas_resultado, "
-                "mensaje_error, traza_error, log_ejecucion, anulada_por, anulada_en, motivo_anulacion "
+                "mensaje_error, traza_error, log_ejecucion, anulada_por, anulada_en, motivo_anulacion, "
+                "confirmada_por, confirmada_en "
                 "FROM proc.corrida WHERE id = :id"
             ),
             {"id": corrida_id},
@@ -83,8 +84,17 @@ def detalle_corrida(corrida_id: int, usuario: UsuarioSesion = Depends(usuario_ac
             {"id": corrida_id},
         ).mappings().all()
 
+        borrador = None
+        if fila["estado"] == "PENDIENTE_CONFIRMACION":
+            fila_borrador = conn.execute(
+                text("SELECT datos FROM proc.resultado_borrador WHERE corrida_id = :id AND aplicado_en IS NULL"),
+                {"id": corrida_id},
+            ).mappings().first()
+            borrador = fila_borrador["datos"] if fila_borrador else []
+
     resultado = dict(fila)
     resultado["insumos"] = [dict(i) for i in insumos]
+    resultado["resultado_borrador"] = borrador
     return resultado
 
 
@@ -120,6 +130,50 @@ def listar_corridas(
     return [dict(f) for f in filas]
 
 
+@router.post("/{corrida_id}/confirmar")
+def confirmar(corrida_id: int, usuario: UsuarioSesion = Depends(usuario_actual)):
+    with conexion_con_usuario(usuario.id) as conn:
+        fila = conn.execute(
+            text("SELECT proceso, estado::text FROM proc.corrida WHERE id = :id"), {"id": corrida_id}
+        ).mappings().first()
+        if fila is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "no_encontrada", "La corrida no existe o no tiene permiso para verla.")
+        if fila["estado"] != "PENDIENTE_CONFIRMACION":
+            raise _error(
+                status.HTTP_409_CONFLICT, "no_confirmable",
+                f"La corrida está en estado {fila['estado']}, no en PENDIENTE_CONFIRMACION.",
+            )
+
+        modulo = PROCESOS[fila["proceso"]]["modulo"]
+        puede = conn.execute(
+            text("SELECT puede_publicar FROM core.permiso WHERE rol = :rol AND modulo = :modulo"),
+            {"rol": usuario.rol, "modulo": modulo},
+        ).scalar()
+    if not puede:
+        raise _error(
+            status.HTTP_403_FORBIDDEN, "sin_permiso",
+            f"Su rol ({usuario.rol}) no tiene permiso para confirmar resultados de {fila['proceso']}.",
+        )
+
+    try:
+        filas = confirmar_corrida(usuario.id, corrida_id)
+    except ErrorConfirmacion as exc:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "error_confirmacion",
+            f"No se pudo cargar el resultado a la base: {exc}. La corrida quedó en ERROR.",
+        )
+    if filas is None:
+        raise _error(
+            status.HTTP_409_CONFLICT, "no_confirmable",
+            "La corrida ya no está en estado PENDIENTE_CONFIRMACION (otra persona ya la confirmó o anuló).",
+        )
+
+    with conexion_con_usuario(usuario.id) as conn:
+        registrar_evento(conn, usuario.id, "confirmacion", "proc.corrida", corrida_id, {"filas": filas})
+
+    return {"mensaje": "Resultado confirmado y cargado.", "filas": filas}
+
+
 class AnularEntrada(BaseModel):
     motivo: str
 
@@ -136,7 +190,8 @@ def anular(corrida_id: int, entrada: AnularEntrada, usuario: UsuarioSesion = Dep
     if not anulada:
         raise _error(
             status.HTTP_409_CONFLICT, "no_anulable",
-            "La corrida no existe, no tiene permiso para verla, o no está en estado OK/ERROR.",
+            "La corrida no existe, no tiene permiso para verla, o no está en estado "
+            "OK/ERROR/PENDIENTE_CONFIRMACION.",
         )
 
     with conexion_con_usuario(usuario.id) as conn:

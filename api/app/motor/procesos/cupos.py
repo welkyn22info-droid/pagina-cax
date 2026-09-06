@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from app.motor.ejecutor import corrida_vigente
-from app.motor.io import escribir_resultado, leer_insumo, leer_resultado
+from app.motor.io import guardar_borrador, leer_insumo, leer_resultado
 
 # Cambia a `from legado.cupos import calcular_consumo_cupo` cuando llegue
 # el código real (ver DECISIONES.md, decisión 2).
@@ -20,10 +20,7 @@ def ejecutar(conn, fecha_datos, corrida_id: int, parametros: dict) -> int:
     entidades = _leer_entidades(conn)
 
     resultado = calcular_consumo_cupo(posiciones, valoracion, limites, entidades)
-    if resultado.empty:
-        return 0
-
-    return escribir_resultado(conn, "res.consumo_cupo", resultado, corrida_id, fecha_datos)
+    return guardar_borrador(conn, "res.consumo_cupo", resultado, corrida_id)
 
 
 def _leer_limites_vigentes(conn, fecha_datos) -> pd.DataFrame:

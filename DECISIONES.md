@@ -254,3 +254,39 @@ directamente. El formato legado `.xls` (binario, no soportado por
 openpyxl) sigue usando `pd.read_excel` sin streaming — es un formato en
 extinción y no vale la pena una segunda implementación para él. Probado
 con un archivo sintético de 50.000 filas (`api/pruebas/test_ingesta.py`).
+
+## 17. Estado `PENDIENTE_CONFIRMACION`: el resultado del legado no cae directo en `res.*`
+
+Pedido explícito del usuario, más allá de las 21 secciones originales: el
+código real de CAXDAC puede llegar como notebooks de Jupyter en vez de
+funciones `.py` limpias, y aunque se envuelva con la misma firma del
+contrato (decisión 1), el resultado de una corrida debe poder auditarse
+**antes** de que quede como oficial en `res.*` — no basta con verlo en
+pantalla después de que ya se escribió.
+
+**Decisión:** el envoltorio de cada proceso (`app/motor/procesos/*.py`) ya
+no llama `escribir_resultado` directo. Llama `guardar_borrador`
+(`app/motor/io.py`), que guarda las filas calculadas como JSON en la
+tabla nueva `proc.resultado_borrador` (migración 012). El motor deja la
+corrida en el estado nuevo `PENDIENTE_CONFIRMACION` (no en `OK`) — un
+valor agregado a `proc.estado_corrida` con `ALTER TYPE ... ADD VALUE`.
+`GET /corridas/{id}` expone ese borrador para que la interfaz lo muestre
+como vista previa. `POST /corridas/{id}/confirmar` es el paso nuevo: llama
+`aplicar_borrador`, que recién ahí escribe en `res.*` reutilizando
+`escribir_resultado` sin modificarla, y pasa la corrida a `OK`
+(`confirmada_por`/`confirmada_en`, columnas nuevas en `proc.corrida`).
+`POST /corridas/{id}/anular` ahora también acepta descartar una corrida en
+`PENDIENTE_CONFIRMACION` — nunca llegó a `res.*`, así que anularla es solo
+marcarla `ANULADA` sin nada que revertir.
+
+El permiso para confirmar reutiliza `puede_publicar` (no se agrega una
+columna de permiso nueva): el rol que hoy puede dar por oficial un
+resultado ante otros (`revisor`, `admin`) es el mismo que debe poder darlo
+por oficial en la base. `Publicar` (sección 13, con acuse de lectura)
+sigue siendo un paso aparte y posterior — confirmar hace que el resultado
+exista en `res.*`; publicar lo hace visible para el rol `consulta`.
+
+Para procesos que no necesitan legado (los maestros de `core.*` —
+emisores, instrumentos, contrapartes, límites de cupo — sección 11), este
+estado no aplica: se siguen cargando directo a su tabla vía los
+formularios de administración, sin pasar por `proc.corrida` en absoluto.

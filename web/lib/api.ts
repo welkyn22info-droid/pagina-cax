@@ -102,7 +102,7 @@ export interface Corrida {
   id: number;
   proceso: string;
   fecha_datos: string;
-  estado: "PENDIENTE" | "EJECUTANDO" | "OK" | "ERROR" | "ANULADA";
+  estado: "PENDIENTE" | "EJECUTANDO" | "PENDIENTE_CONFIRMACION" | "OK" | "ERROR" | "ANULADA";
   disparada_por: number;
   iniciada_en: string;
   finalizada_en: string | null;
