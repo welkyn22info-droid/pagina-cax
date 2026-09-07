@@ -374,3 +374,32 @@ archivo para esa fecha" sigue vigente entre cargas no anuladas, pero una
 anulada libera el hash. De paso, `crear_carga` (`app/rutas/cargas.py`)
 ajusta su chequeo previo de duplicado para ignorar cargas anuladas
 también — antes solo miraba `tipo_insumo + fecha_datos + hash`.
+
+## 21. `staging.curva_nodo`: se quita `campos_extra`, se agrega una vista de auditoría en vez de columnas repetidas
+
+Pedido del usuario tras revisar la tabla en pgAdmin: quitar `campos_extra`
+(no se usa — las 3 columnas de curvas ya están mapeadas explícitamente) y
+poder ver junto a cada fila quién la cargó, cuándo, si esa carga está
+anulada y quién la anuló.
+
+**`campos_extra` fuera de la tabla, no solo sin usar:** `leer_archivo`
+(`app/ingesta/lector.py`) agrega esa columna al DataFrame *siempre*, sin
+mirar si la tabla destino la tiene — así que quitarla de la tabla sin
+ajustar nada más rompía la carga (`INSERT` a una columna inexistente). Se
+corrige `_insertar_filas` (`app/rutas/cargas.py`) para reflejar las
+columnas reales de la tabla destino (mismo patrón que ya usa
+`escribir_resultado` en `app/motor/io.py`) y descartar del `INSERT`
+cualquier columna del DataFrame que la tabla no tenga — no solo
+`campos_extra`, cualquier caso futuro igual.
+
+**Vista, no columnas denormalizadas:** el usuario pidió columnas de
+"fecha de cargue", "usuario que carga", "anulado" y "usuario que anula"
+directamente en la tabla. Guardarlas ahí significaría repetir el mismo
+dato ~13.500 veces por carga (una vez por nodo) y que pudieran
+desincronizarse del original en `staging.carga`. Se crea la vista
+`staging.curva_nodo_auditoria` (`JOIN` a `staging.carga` y `core.usuario`)
+que expone exactamente esas columnas — `anulado` como texto `'Sí'/'No'`,
+tal como se pidió — sin duplicar el dato ni arriesgar que quede
+desactualizado. La anulación sigue siendo por carga completa (un día), no
+por nodo individual — es del archivo entero que se equivocó, no de un
+nodo suelto.

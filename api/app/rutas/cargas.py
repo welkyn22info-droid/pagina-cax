@@ -155,7 +155,15 @@ def _guardar_archivo_original(contenido: bytes, tipo_insumo: str, fecha_datos: d
 def _insertar_filas(conn, tabla: str, df, carga_id: int, fecha_datos: date) -> None:
     import json
 
-    columnas = list(df.columns)
+    from sqlalchemy import inspect
+
+    # leer_archivo (ingesta/lector.py) siempre agrega "campos_extra" al
+    # DataFrame, tenga la tabla destino esa columna o no (staging.curva_nodo
+    # no la tiene). Se descarta aquí lo que la tabla real no admite, en vez
+    # de asumir que el DataFrame ya viene exacto.
+    esquema, nombre = tabla.split(".")
+    columnas_tabla = {c["name"] for c in inspect(conn).get_columns(nombre, schema=esquema)}
+    columnas = [c for c in df.columns if c in columnas_tabla]
     marcadores = []
     for c in columnas:
         marcadores.append(f"CAST(:{c} AS jsonb)" if c == "campos_extra" else f":{c}")
