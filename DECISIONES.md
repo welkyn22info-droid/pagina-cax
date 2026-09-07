@@ -463,3 +463,55 @@ había `SELECT` e `INSERT`) — mismo patrón permisivo que
 `proc.corrida.actualizar_corrida` (decisión 8): el permiso de fondo ya se
 comprobó en la API antes de llegar aquí. Se agrega también el `GRANT
 UPDATE` correspondiente en `operacion/preparar_rol.sql`.
+
+## 24. Selector de fechas de curvas, panel de carga, y anular restringido a quien cargó
+
+Ajustes de usabilidad tras usar el panel real:
+
+**Selector de fechas ya no es una pared de botones.** Con un mes ya eran
+~31 pills con scroll; con años de historia real (~250 fechas hábiles/año)
+se vuelve inmanejable. Se reemplaza por un `<select>` nativo para *agregar*
+una fecha a comparar (el navegador ya sabe buscar/desplazar cientos de
+opciones sin ayuda) y chips abajo solo con las fechas ya elegidas,
+removibles con ×. Por defecto sigue viniendo seleccionada la más reciente.
+
+**Cargar histórico de curvas ahora pide una acción explícita.** Antes
+subía apenas se elegía el archivo. Ahora: elegir archivo → aparece el
+nombre con un botón **Cargar** aparte (mismo patrón que el subidor
+normal) → mientras corre, un contador de segundos transcurridos visible
+("no cierre esta página") para poder corroborar que sigue trabajando, no
+colgado → al terminar, un resumen (cuántas fechas cargadas / ya existían
+/ rechazadas) además del detalle por fecha que ya había.
+
+**`GET /cargas` ahora también acepta más de 200 filas** (subido a 500) y
+trae el nombre de quien cargó y quien anuló (`cargado_por_nombre`,
+`anulada_por_nombre`, JOIN a `core.usuario`) — antes solo el id, inútil
+para mostrar en pantalla sin que el frontend hiciera su propia búsqueda.
+
+**Dónde anular una carga de curvas:** no era descubrible — la única vía
+era la página Cargas, filtrada a un solo día a la vez, y con cientos de
+fechas de curvas eso obliga a ir día por día. Se agrega un panel aparte
+("Cargas de curvas") que lista todas las cargas de ese tipo de una vez
+(`GET /cargas?tipo_insumo=curvas`), con su botón Anular ahí mismo.
+
+**Anular restringido a quien cargó (con excepción del admin).**
+`POST /cargas/{id}/anular` ya comprobaba el permiso de rol
+(`puede_cargar`), pero cualquiera con ese permiso podía anular la carga
+de cualquier otro — se agrega el chequeo de que `cargado_por` sea quien
+pide la anulación, salvo que sea `admin` (queda como red de seguridad
+para corregir un error ajeno).
+
+**Bug real encontrado al probar con un archivo real de julio:**
+`pivotear_curvas_ancho` (`app/ingesta/curvas_ancho.py`) y el script de
+backfill asumían `dayfirst=True` siempre. El archivo de agosto trae
+fechas `1/08/2026` (correcto con `dayfirst=True`), pero un archivo real
+de julio trajo columnas en formato ISO (`2026-07-01`) — con
+`dayfirst=True` aplicado a eso, pandas invirtió día y mes cuando ambos
+eran ≤12: `2026-07-01` se leyó como 7 de enero, y los días 13 al 31 (mes
+inválido al invertir) se descartaron en silencio. Se probó en vivo: de 31
+días reales solo sobrevivían 12, todos con la fecha mal invertida. Se
+corrige para intentar primero `format="%Y-%m-%d"` (como ya hace
+`_parsear_fecha` en `app/ingesta/lector.py` para fechas de fila) y recién
+si falla caer a `dayfirst=True` — mismo orden, mismo motivo. Se repitió la
+carga del archivo real de julio ya corregido: 31 fechas, 31×13.505 filas,
+todas con la fecha correcta.

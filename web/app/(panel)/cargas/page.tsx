@@ -7,6 +7,7 @@ import { formatearFecha, formatearFechaHora, ultimoDiaHabil } from "@/lib/fechas
 import SelectorFecha from "@/componentes/SelectorFecha";
 import SubidorArchivos from "@/componentes/SubidorArchivos";
 import CargarCurvasHistorico from "@/componentes/CargarCurvasHistorico";
+import HistorialCargasCurvas from "@/componentes/HistorialCargasCurvas";
 import { useUsuario } from "@/lib/hooks";
 import { puede } from "@/lib/sesion";
 
@@ -101,8 +102,9 @@ export default function PaginaCargas() {
       <h2 className="text-sm font-semibold text-[var(--ink-soft)] mb-3">Subir archivos</h2>
       <SubidorArchivos fecha={fecha} onCompletado={alTerminar} />
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-4">
         <CargarCurvasHistorico onCompletado={alTerminar} />
+        <HistorialCargasCurvas />
       </div>
 
       <h2 className="text-sm font-semibold text-[var(--ink-soft)] mt-8 mb-3">Historial de cargas — {formatearFecha(fecha)}</h2>

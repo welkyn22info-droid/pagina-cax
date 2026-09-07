@@ -32,7 +32,14 @@ def pivotear(ruta_csv: str) -> dict[str, pd.DataFrame]:
         var_name="fecha_original",
         value_name="valor",
     )
-    largo["fecha_iso"] = pd.to_datetime(largo["fecha_original"], dayfirst=True).dt.strftime("%Y-%m-%d")
+    # ISO primero (aaaa-mm-dd), dd/mm/aaaa si no calza — con dayfirst=True
+    # aplicado directo a una fecha ISO, pandas puede invertir día y mes
+    # cuando ambos son ≤12 (se comprobó en vivo con columnas "2026-07-01").
+    fechas = pd.to_datetime(largo["fecha_original"], format="%Y-%m-%d", errors="coerce")
+    faltantes = fechas.isna()
+    if faltantes.any():
+        fechas.loc[faltantes] = pd.to_datetime(largo.loc[faltantes, "fecha_original"], dayfirst=True, errors="coerce")
+    largo["fecha_iso"] = fechas.dt.strftime("%Y-%m-%d")
 
     por_fecha: dict[str, pd.DataFrame] = {}
     for fecha_iso, grupo in largo.groupby("fecha_iso"):

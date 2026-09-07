@@ -15,15 +15,30 @@ _ALIAS_CURVA = {_normalizar_encabezado(a) for a in ["CURVA", "TIPO_CURVA"]}
 _ALIAS_NODO = {_normalizar_encabezado(a) for a in ["NODO", "PLAZO EN DIAS", "PLAZO"]}
 
 
+def _parsear_fechas(valores: pd.Series) -> pd.Series:
+    """ISO primero (aaaa-mm-dd, como llega el archivo real), dd/mm/aaaa si
+    no calza — mismo orden que _parsear_fecha en ingesta/lector.py.
+    Fundamental hacerlo en este orden: con dayfirst=True aplicado directo
+    a una fecha ISO, pandas/dateutil pueden invertir día y mes cuando
+    ambos son ≤12 (se comprobó en vivo: "2026-07-01" se leía como
+    7 de enero en vez de 1 de julio)."""
+    fechas = pd.to_datetime(valores, format="%Y-%m-%d", errors="coerce")
+    faltantes = fechas.isna()
+    if faltantes.any():
+        fechas.loc[faltantes] = pd.to_datetime(valores[faltantes], dayfirst=True, errors="coerce")
+    return fechas
+
+
 def es_formato_ancho(encabezados: list[str]) -> bool:
     """Ancho: hay una columna de curva, una de nodo/plazo, y al menos dos
-    columnas más que parecen fecha (dd/mm/aaaa). El formato largo normal
-    (Curva;Nodo;Valor) tiene exactamente 3 columnas y no matchea esto."""
+    columnas más que parecen fecha (aaaa-mm-dd o dd/mm/aaaa). El formato
+    largo normal (Curva;Nodo;Valor) tiene exactamente 3 columnas y no
+    matchea esto."""
     normalizados = [_normalizar_encabezado(c) for c in encabezados]
     tiene_curva = any(c in _ALIAS_CURVA for c in normalizados)
     tiene_nodo = any(c in _ALIAS_NODO for c in normalizados)
-    columnas_fecha = [c for c in encabezados if not pd.isna(pd.to_datetime(c, dayfirst=True, errors="coerce"))]
-    return tiene_curva and tiene_nodo and len(columnas_fecha) >= 2
+    columnas_fecha = _parsear_fechas(pd.Series(encabezados)).notna().sum()
+    return tiene_curva and tiene_nodo and columnas_fecha >= 2
 
 
 def pivotear_curvas_ancho(contenido: bytes) -> dict[str, pd.DataFrame]:
@@ -41,7 +56,7 @@ def pivotear_curvas_ancho(contenido: bytes) -> dict[str, pd.DataFrame]:
     largo = df.melt(
         id_vars=[col_curva, col_nodo], value_vars=columnas_fecha, var_name="fecha_original", value_name="valor"
     )
-    largo["fecha_iso"] = pd.to_datetime(largo["fecha_original"], dayfirst=True, errors="coerce").dt.strftime("%Y-%m-%d")
+    largo["fecha_iso"] = _parsear_fechas(largo["fecha_original"]).dt.strftime("%Y-%m-%d")
     largo = largo.dropna(subset=["fecha_iso"])
 
     por_fecha: dict[str, pd.DataFrame] = {}

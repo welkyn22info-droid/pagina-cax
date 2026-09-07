@@ -95,8 +95,10 @@ export interface Carga {
   filas_validas: number | null;
   estado: "RECIBIDO" | "VALIDADO" | "RECHAZADO";
   cargado_por: number;
+  cargado_por_nombre: string;
   cargado_en: string;
   anulada_por: number | null;
+  anulada_por_nombre: string | null;
   anulada_en: string | null;
   motivo_anulacion: string | null;
 }

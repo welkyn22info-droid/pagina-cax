@@ -318,23 +318,30 @@ def listar_cargas(
     condiciones = []
     parametros: dict = {}
     if tipo_insumo:
-        condiciones.append("tipo_insumo = :tipo")
+        condiciones.append("c.tipo_insumo = :tipo")
         parametros["tipo"] = tipo_insumo
     if fecha:
-        condiciones.append("fecha_datos = :fecha")
+        condiciones.append("c.fecha_datos = :fecha")
         parametros["fecha"] = fecha
     if estado:
-        condiciones.append("estado = :estado")
+        condiciones.append("c.estado = :estado")
         parametros["estado"] = estado
     where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
 
     with conexion_con_usuario(usuario.id) as conn:
         filas = conn.execute(
             text(
-                f"SELECT id, tipo_insumo, fecha_datos, nombre_archivo, filas_leidas, filas_validas, "
-                f"estado::text, cargado_por, cargado_en, anulada_por, anulada_en, motivo_anulacion "
-                f"FROM staging.carga {where} "
-                f"ORDER BY cargado_en DESC LIMIT 200"
+                f"SELECT c.id, c.tipo_insumo, c.fecha_datos, c.nombre_archivo, c.filas_leidas, c.filas_validas, "
+                f"c.estado::text, c.cargado_por, uc.nombre AS cargado_por_nombre, c.cargado_en, "
+                f"c.anulada_por, ua.nombre AS anulada_por_nombre, c.anulada_en, c.motivo_anulacion "
+                f"FROM staging.carga c "
+                f"JOIN core.usuario uc ON uc.id = c.cargado_por "
+                f"LEFT JOIN core.usuario ua ON ua.id = c.anulada_por "
+                f"{where} "
+                # Un año de curvas son ~250 fechas; 500 da margen sin
+                # necesidad de paginar todavía (decisión de la sección 12,
+                # decisión 12 del proyecto: paginación de servidor pendiente).
+                f"ORDER BY c.cargado_en DESC LIMIT 500"
             ),
             parametros,
         ).mappings().all()
@@ -408,7 +415,7 @@ def anular_carga(carga_id: int, entrada: AnularCargaEntrada, usuario: UsuarioSes
 
     with conexion_con_usuario(usuario.id) as conn:
         fila = conn.execute(
-            text("SELECT tipo_insumo, anulada_en FROM staging.carga WHERE id = :id"), {"id": carga_id}
+            text("SELECT tipo_insumo, anulada_en, cargado_por FROM staging.carga WHERE id = :id"), {"id": carga_id}
         ).mappings().first()
         if fila is None:
             raise _error(status.HTTP_404_NOT_FOUND, "no_encontrada", "La carga no existe o no tiene permiso para verla.")
@@ -417,6 +424,14 @@ def anular_carga(carga_id: int, entrada: AnularCargaEntrada, usuario: UsuarioSes
 
         modulo = MODULO_POR_TIPO.get(fila["tipo_insumo"], fila["tipo_insumo"])
         _verificar_permiso_cargar(usuario, modulo)
+
+        # Solo quien la cargó puede anularla — el admin queda como excepción
+        # (red de seguridad para corregir un error ajeno).
+        if fila["cargado_por"] != usuario.id and usuario.rol != "admin":
+            raise _error(
+                status.HTTP_403_FORBIDDEN, "no_es_propia",
+                "Solo quien cargó este archivo (o un administrador) puede anularlo.",
+            )
 
         conn.execute(
             text(

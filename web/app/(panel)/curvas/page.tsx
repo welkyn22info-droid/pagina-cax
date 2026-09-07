@@ -58,9 +58,16 @@ export default function PaginaCurvas() {
   });
   const datosGrafica = nodosOrdenados.map((nodo) => ({ nodo, ...valoresPorNodo[nodo] }));
 
-  function alternarFecha(fecha: string) {
-    setFechasSeleccionadas((actual) => (actual.includes(fecha) ? actual.filter((f) => f !== fecha) : [...actual, fecha]));
+  function agregarFecha(fecha: string) {
+    if (!fecha) return;
+    setFechasSeleccionadas((actual) => (actual.includes(fecha) ? actual : [...actual, fecha]));
   }
+
+  function quitarFecha(fecha: string) {
+    setFechasSeleccionadas((actual) => actual.filter((f) => f !== fecha));
+  }
+
+  const fechasParaAgregar = (fechasDisponibles || []).filter((f) => !fechasSeleccionadas.includes(f));
 
   return (
     <div>
@@ -90,25 +97,45 @@ export default function PaginaCurvas() {
       {tipoCurva && (
         <>
           <div className="mb-4">
-            <p className="text-xs font-medium text-[var(--ink-soft)] mb-2">
-              Fechas a comparar {fechasSeleccionadas.length === 0 && "(seleccione al menos una)"}
-            </p>
-            <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
-              {(fechasDisponibles || []).map((f) => (
-                <button
+            <p className="text-xs font-medium text-[var(--ink-soft)] mb-2">Fechas a comparar</p>
+            <div className="flex items-center gap-2 mb-2">
+              <select
+                value=""
+                onChange={(e) => agregarFecha(e.target.value)}
+                aria-label="Agregar fecha a comparar"
+                disabled={fechasParaAgregar.length === 0}
+                className="border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm disabled:opacity-50"
+              >
+                <option value="" disabled>
+                  {fechasParaAgregar.length === 0 ? "No hay más fechas para agregar" : "+ Agregar fecha…"}
+                </option>
+                {fechasParaAgregar.map((f) => (
+                  <option key={f} value={f}>{formatearFecha(f)}</option>
+                ))}
+              </select>
+              <span className="text-xs text-[var(--ink-soft)]">
+                {(fechasDisponibles || []).length} fecha{(fechasDisponibles || []).length === 1 ? "" : "s"} disponible
+                {(fechasDisponibles || []).length === 1 ? "" : "s"} para esta curva
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {fechasSeleccionadas.map((f) => (
+                <span
                   key={f}
-                  onClick={() => alternarFecha(f)}
-                  className={`text-xs rounded-full px-3 py-1 border transition-colors ${
-                    fechasSeleccionadas.includes(f)
-                      ? "bg-[var(--teal)] text-white border-[var(--teal)]"
-                      : "border-[var(--rule)] text-[var(--ink-soft)] hover:bg-gray-50"
-                  }`}
+                  className="inline-flex items-center gap-1.5 text-xs rounded-full pl-3 pr-1.5 py-1 bg-[var(--teal-pale)] text-[var(--teal)]"
                 >
                   {formatearFecha(f)}
-                </button>
+                  <button
+                    onClick={() => quitarFecha(f)}
+                    aria-label={`Quitar ${formatearFecha(f)} de la comparación`}
+                    className="rounded-full w-4 h-4 flex items-center justify-center hover:bg-[var(--teal)] hover:text-white"
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
-              {(fechasDisponibles || []).length === 0 && (
-                <span className="text-xs text-[var(--ink-soft)]">Sin fechas cargadas para esta curva.</span>
+              {fechasSeleccionadas.length === 0 && (
+                <span className="text-xs text-[var(--ink-soft)]">Seleccione al menos una fecha del desplegable.</span>
               )}
             </div>
           </div>
