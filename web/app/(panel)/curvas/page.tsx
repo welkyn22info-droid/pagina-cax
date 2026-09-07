@@ -13,14 +13,10 @@ export default function PaginaCurvas() {
   const [tipoCurva, setTipoCurva] = useState<string>("");
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState<string[]>([]);
 
-  const consultaTipos = useQuery<string[]>({
+  const { data: tipos } = useQuery<string[]>({
     queryKey: ["curvas", "tipos"],
     queryFn: () => api<string[]>("/curvas/tipos"),
   });
-  const tipos = consultaTipos.data;
-  if (typeof window !== "undefined") {
-    (window as unknown as { __debugTipos: unknown }).__debugTipos = consultaTipos;
-  }
 
   useEffect(() => {
     if (!tipoCurva && tipos && tipos.length > 0) setTipoCurva(tipos[0]);
