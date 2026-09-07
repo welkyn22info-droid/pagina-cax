@@ -13,8 +13,9 @@ from sqlalchemy import text
 
 from app.config import config
 from app.db import conexion_con_usuario
+from app.ingesta.curvas_ancho import es_formato_ancho, pivotear_curvas_ancho
 from app.ingesta.esquemas import ESQUEMAS
-from app.ingesta.lector import leer_archivo
+from app.ingesta.lector import _detectar_separador, _parsear_numero_colombiano, leer_archivo
 from app.ingesta.validador import validar
 from app.seguridad import UsuarioSesion, registrar_evento, requiere_permiso, usuario_actual
 
@@ -32,6 +33,16 @@ MODULO_POR_TIPO = {
 
 def _error(codigo: int, error: str, mensaje: str, detalle: dict | None = None) -> HTTPException:
     return HTTPException(status_code=codigo, detail={"error": error, "mensaje": mensaje, "detalle": detalle or {}})
+
+
+def _parsear_numero_seguro(valor):
+    """Como _parsear_numero_colombiano, pero devuelve None en vez de lanzar
+    — para poder vectorizar con .apply() y contar inválidos con .isna()
+    en vez de un try/except por fila."""
+    try:
+        return _parsear_numero_colombiano(valor)
+    except ValueError:
+        return None
 
 
 @router.post("")
@@ -123,6 +134,106 @@ async def crear_carga(
             "mensaje": resultado.mensaje(archivo.filename, lectura.encabezados_originales),
             "detalle_error": resultado.detalle_error(),
         }
+
+
+@router.post("/curvas-multiples")
+async def cargar_curvas_multiples(archivo: UploadFile = File(...), usuario: UsuarioSesion = Depends(usuario_actual)):
+    """Carga un archivo ANCHO de curvas (una columna por fecha, como llega
+    de la fuente) — crea una carga por cada fecha que trae, igual que si
+    se hubiera subido un archivo por día (decisión 22). Para un solo día
+    (3 columnas: curva, nodo, valor) se usa POST /cargas normal."""
+    _verificar_permiso_cargar(usuario, "curvas")
+
+    contenido = await archivo.read()
+    separador = _detectar_separador(contenido)
+    primera_linea = contenido.decode("utf-8-sig", errors="ignore").splitlines()[0] if contenido else ""
+    encabezados = primera_linea.split(separador) if primera_linea else []
+
+    if not es_formato_ancho(encabezados):
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "formato_no_reconocido",
+            "El archivo no parece tener el formato ancho esperado: una columna 'Curva', una 'Nodo'/'Plazo' "
+            "y al menos dos columnas más con fechas.",
+        )
+
+    por_fecha = pivotear_curvas_ancho(contenido)
+    if not por_fecha:
+        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "sin_fechas", "No se reconoció ninguna fecha en el archivo.")
+
+    ruta_original = None
+    resultados = []
+    with conexion_con_usuario(usuario.id) as conn:
+        for fecha_iso in sorted(por_fecha):
+            fecha_datos = date.fromisoformat(fecha_iso)
+            df = por_fecha[fecha_iso].copy()
+
+            # .apply() en vez de .at[idx, col] fila por fila: con ~13.500
+            # filas por fecha, el indexado escalar repetido de pandas es el
+            # cuello de botella real (se midió con el archivo de agosto
+            # completo — 418.655 filas en total).
+            nodos = df["nodo"].apply(_parsear_numero_seguro)
+            valores = df["valor"].apply(_parsear_numero_seguro)
+            filas_invalidas = int(nodos.isna().sum() + valores.isna().sum())
+
+            if filas_invalidas:
+                resultados.append({
+                    "fecha_datos": fecha_iso, "carga_id": None, "estado": "RECHAZADO", "duplicado": False,
+                    "filas_validas": 0, "mensaje": f"{filas_invalidas} filas con nodo o valor no numérico.",
+                })
+                continue
+
+            df["nodo"] = nodos.astype(int)
+            df["valor"] = valores
+            df["tipo_curva"] = df["tipo_curva"].astype(str).str.strip()
+
+            hash_fecha = hashlib.sha256(df.to_csv(index=False).encode("utf-8")).hexdigest()
+            existente = conn.execute(
+                text(
+                    "SELECT id, estado::text FROM staging.carga WHERE tipo_insumo = 'curvas' "
+                    "AND fecha_datos = :fecha AND hash_sha256 = :hash AND anulada_en IS NULL"
+                ),
+                {"fecha": fecha_datos, "hash": hash_fecha},
+            ).mappings().first()
+            if existente is not None:
+                resultados.append({
+                    "fecha_datos": fecha_iso, "carga_id": existente["id"], "estado": existente["estado"],
+                    "duplicado": True, "filas_validas": 0, "mensaje": "Ya se había cargado para esta fecha.",
+                })
+                continue
+
+            carga_id = conn.execute(
+                text(
+                    "INSERT INTO staging.carga "
+                    "(tipo_insumo, fecha_datos, nombre_archivo, hash_sha256, filas_leidas, filas_validas, "
+                    " estado, cargado_por) "
+                    "VALUES ('curvas', :fecha, :nombre, :hash, :filas, :filas, 'VALIDADO', :usuario_id) "
+                    "RETURNING id"
+                ),
+                {
+                    "fecha": fecha_datos, "nombre": f"{archivo.filename} — {fecha_iso}", "hash": hash_fecha,
+                    "filas": len(df), "usuario_id": usuario.id,
+                },
+            ).scalar_one()
+
+            if ruta_original is None:
+                ruta_original = _guardar_archivo_original(contenido, "curvas", fecha_datos, carga_id, archivo.filename)
+            if ruta_original:
+                conn.execute(
+                    text("UPDATE staging.carga SET ruta_archivo = :ruta WHERE id = :id"),
+                    {"ruta": ruta_original, "id": carga_id},
+                )
+
+            _insertar_filas(conn, "staging.curva_nodo", df, carga_id, fecha_datos)
+            registrar_evento(
+                conn, usuario.id, "carga", "staging.carga", carga_id,
+                {"tipo_insumo": "curvas", "fecha_datos": fecha_iso, "origen": "carga_multiple"},
+            )
+            resultados.append({
+                "fecha_datos": fecha_iso, "carga_id": carga_id, "estado": "VALIDADO", "duplicado": False,
+                "filas_validas": len(df), "mensaje": f"{len(df)} filas válidas.",
+            })
+
+    return {"archivo": archivo.filename, "fechas_procesadas": len(resultados), "resultados": resultados}
 
 
 def _verificar_permiso_cargar(usuario: UsuarioSesion, modulo: str) -> None:

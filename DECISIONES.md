@@ -403,3 +403,30 @@ tal como se pidió — sin duplicar el dato ni arriesgar que quede
 desactualizado. La anulación sigue siendo por carga completa (un día), no
 por nodo individual — es del archivo entero que se equivocó, no de un
 nodo suelto.
+
+## 22. Carga de curvas con varias fechas en un solo archivo, desde el panel web
+
+Pedido del usuario: el panel de Cargas solo entendía el formato largo de un
+día (3 columnas: curva, nodo, valor) — un archivo ancho como el real de
+origen (una columna por fecha) solo se podía cargar con el script aparte
+(`operacion/cargar_curvas_historico.py`), no desde la interfaz.
+
+Se agrega `POST /cargas/curvas-multiples`: recibe el archivo ancho
+completo, lo detecta (`app/ingesta/curvas_ancho.py::es_formato_ancho` —
+columna de curva + columna de nodo/plazo + al menos dos columnas que
+parsean como fecha) y lo pivotea a una carga independiente por cada fecha
+que trae, con su propio `carga_id`, hash y trazabilidad — igual que si se
+hubiera subido un archivo por día. No reemplaza `POST /cargas` (que sigue
+siendo el camino normal para un solo día); es una vía aparte, con su propio
+componente en el panel (`CargarCurvasHistorico.tsx`) que no pide fecha
+porque las trae el archivo.
+
+Probado con el archivo real de agosto completo (31 fechas, 418.655 filas):
+~93s de punta a punta. Aceptable — es una carga histórica ocasional, no el
+flujo diario. El primer intento sin optimizar tardaba ~106s por validar
+tipo por fila con `.at[idx, col]` en un `for`; cambiarlo a `.apply()`
+vectorizado sobre la columna completa lo bajó un poco, pero el grueso del
+tiempo está en las ~31 idas y vueltas a Postgres (una carga completa por
+fecha), no en la validación — si esto se vuelve un cuello de botella real,
+el siguiente paso sería insertar todas las fechas en una sola sentencia en
+vez de una por fecha.
