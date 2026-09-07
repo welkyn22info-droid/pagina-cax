@@ -24,6 +24,7 @@ const NAV: ItemNav[] = [
   { href: "/resultados/pasivo", etiqueta: "Pasivo", modulo: "pasivo" },
   { href: "/resultados/funding-ratio", etiqueta: "Funding ratio", modulo: "funding_ratio" },
   { href: "/controles/cupos", etiqueta: "Cupos", modulo: "cupos" },
+  { href: "/curvas", etiqueta: "Curvas", modulo: "curvas" },
   { href: "/auditoria", etiqueta: "Auditoría", soloAdmin: true },
   { href: "/admin/usuarios", etiqueta: "Usuarios", soloAdmin: true },
   { href: "/admin/limites", etiqueta: "Límites de cupo", soloAdmin: true },

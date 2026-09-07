@@ -61,4 +61,14 @@ ESQUEMAS: dict[str, EsquemaInsumo] = {
             Columna("moneda",      ["MONEDA", "CURRENCY"], "texto", False),
         ],
     ),
+    "curvas": EsquemaInsumo(
+        tipo="curvas",
+        tabla="staging.curva_nodo",
+        separador=";",
+        columnas=[
+            Columna("tipo_curva", ["CURVA", "TIPO_CURVA"], "texto"),
+            Columna("nodo",       ["NODO", "PLAZO EN DIAS", "PLAZO"], "entero"),
+            Columna("valor",      ["VALOR", "TASA"], "numero"),
+        ],
+    ),
 }

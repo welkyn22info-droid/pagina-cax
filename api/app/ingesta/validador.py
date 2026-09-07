@@ -77,6 +77,9 @@ def validar(lectura: ResultadoLectura, esquema: EsquemaInsumo) -> ResultadoValid
             try:
                 if columna.tipo == "numero":
                     df.at[idx, columna.destino] = _parsear_numero_colombiano(valor)
+                elif columna.tipo == "entero":
+                    numero = _parsear_numero_colombiano(valor)
+                    df.at[idx, columna.destino] = int(numero) if numero is not None else None
                 elif columna.tipo == "fecha":
                     df.at[idx, columna.destino] = _parsear_fecha(valor)
                 else:

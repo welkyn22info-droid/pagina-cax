@@ -96,6 +96,20 @@ export interface Carga {
   estado: "RECIBIDO" | "VALIDADO" | "RECHAZADO";
   cargado_por: number;
   cargado_en: string;
+  anulada_por: number | null;
+  anulada_en: string | null;
+  motivo_anulacion: string | null;
+}
+
+export interface PuntoCurva {
+  nodo: number;
+  valor: number;
+}
+
+export interface SerieCurva {
+  fecha_datos: string;
+  carga_id: number;
+  puntos: PuntoCurva[];
 }
 
 export interface Corrida {

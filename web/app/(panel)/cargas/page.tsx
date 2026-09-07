@@ -2,15 +2,25 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, Carga } from "@/lib/api";
+import { api, ErrorApi, Carga } from "@/lib/api";
 import { formatearFecha, formatearFechaHora, ultimoDiaHabil } from "@/lib/fechas";
 import SelectorFecha from "@/componentes/SelectorFecha";
 import SubidorArchivos from "@/componentes/SubidorArchivos";
+import { useUsuario } from "@/lib/hooks";
+import { puede } from "@/lib/sesion";
 
 const ETIQUETAS_TIPO: Record<string, string> = {
   posiciones: "Posiciones",
   precios: "Precios",
   flujos_pasivo: "Flujos de pasivo",
+  curvas: "Curvas de mercado",
+};
+
+const MODULO_POR_TIPO: Record<string, string> = {
+  posiciones: "valoracion",
+  precios: "valoracion",
+  flujos_pasivo: "pasivo",
+  curvas: "curvas",
 };
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -21,7 +31,11 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
 
 export default function PaginaCargas() {
   const [fecha, setFecha] = useState(ultimoDiaHabil());
+  const [anulando, setAnulando] = useState<number | null>(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
+  const [errorAnulacion, setErrorAnulacion] = useState<string | null>(null);
   const cliente = useQueryClient();
+  const { data: usuario } = useUsuario();
 
   const { data: faltantes, refetch: refetchFaltantes } = useQuery<{ faltantes: Record<string, string[]> }>({
     queryKey: ["cargas", "faltantes", fecha],
@@ -34,12 +48,26 @@ export default function PaginaCargas() {
   });
 
   const insumosEsperados = ["posiciones", "precios", "flujos_pasivo"];
-  const cargadosPorTipo = new Set((cargas || []).filter((c) => c.estado === "VALIDADO").map((c) => c.tipo_insumo));
+  const cargadosPorTipo = new Set((cargas || []).filter((c) => c.estado === "VALIDADO" && !c.anulada_en).map((c) => c.tipo_insumo));
 
   function alTerminar() {
     refetchCargas();
     refetchFaltantes();
     cliente.invalidateQueries({ queryKey: ["procesos"] });
+    cliente.invalidateQueries({ queryKey: ["curvas"] });
+  }
+
+  async function confirmarAnulacion(cargaId: number) {
+    if (!motivoAnulacion.trim()) return;
+    setErrorAnulacion(null);
+    try {
+      await api(`/cargas/${cargaId}/anular`, { metodo: "POST", cuerpo: { motivo: motivoAnulacion } });
+      setAnulando(null);
+      setMotivoAnulacion("");
+      alTerminar();
+    } catch (err) {
+      setErrorAnulacion(err instanceof ErrorApi ? err.message : "No se pudo anular la carga.");
+    }
   }
 
   return (
@@ -78,16 +106,56 @@ export default function PaginaCargas() {
           <div className="px-4 py-6 text-sm text-[var(--ink-soft)] text-center">Sin cargas registradas para esta fecha.</div>
         )}
         {(cargas || []).map((c) => (
-          <div key={c.id} className="px-4 py-3 flex items-center justify-between text-sm">
-            <div>
-              <p className="font-medium">{c.nombre_archivo}</p>
-              <p className="text-xs text-[var(--ink-soft)]">
-                {ETIQUETAS_TIPO[c.tipo_insumo] || c.tipo_insumo} · {formatearFechaHora(c.cargado_en)} · {c.filas_validas ?? 0} filas
-              </p>
+          <div key={c.id} className="px-4 py-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className={`font-medium ${c.anulada_en ? "line-through text-[var(--ink-soft)]" : ""}`}>{c.nombre_archivo}</p>
+                <p className="text-xs text-[var(--ink-soft)]">
+                  {ETIQUETAS_TIPO[c.tipo_insumo] || c.tipo_insumo} · {formatearFechaHora(c.cargado_en)} · {c.filas_validas ?? 0} filas
+                </p>
+                {c.anulada_en && (
+                  <p className="text-xs text-[var(--danger)] mt-0.5">
+                    Anulada el {formatearFechaHora(c.anulada_en)} — {c.motivo_anulacion}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {c.estado === "VALIDADO" && !c.anulada_en && puede(usuario, MODULO_POR_TIPO[c.tipo_insumo] || c.tipo_insumo, "puede_cargar") && (
+                  <button
+                    onClick={() => {
+                      setAnulando(anulando === c.id ? null : c.id);
+                      setMotivoAnulacion("");
+                      setErrorAnulacion(null);
+                    }}
+                    className="text-xs text-[var(--danger)] hover:underline"
+                  >
+                    Anular
+                  </button>
+                )}
+                <span className={`text-xs font-medium ${c.estado === "VALIDADO" ? "text-[var(--teal)]" : c.estado === "RECHAZADO" ? "text-[var(--danger)]" : "text-[var(--ink-soft)]"}`}>
+                  {ETIQUETAS_ESTADO[c.estado] || c.estado}
+                </span>
+              </div>
             </div>
-            <span className={`text-xs font-medium ${c.estado === "VALIDADO" ? "text-[var(--teal)]" : c.estado === "RECHAZADO" ? "text-[var(--danger)]" : "text-[var(--ink-soft)]"}`}>
-              {ETIQUETAS_ESTADO[c.estado] || c.estado}
-            </span>
+            {anulando === c.id && (
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={motivoAnulacion}
+                  onChange={(e) => setMotivoAnulacion(e.target.value)}
+                  placeholder="Motivo de la anulación"
+                  className="flex-1 border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-xs"
+                />
+                <button
+                  onClick={() => confirmarAnulacion(c.id)}
+                  disabled={!motivoAnulacion.trim()}
+                  className="text-xs bg-[var(--danger)] text-white rounded-md px-3 py-1.5 disabled:opacity-50"
+                >
+                  Confirmar
+                </button>
+              </div>
+            )}
+            {anulando === c.id && errorAnulacion && <p className="text-xs text-[var(--danger)] mt-1">{errorAnulacion}</p>}
           </div>
         ))}
       </div>

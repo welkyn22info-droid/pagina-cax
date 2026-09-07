@@ -2,6 +2,7 @@
 api/legado/*.py
 datos/
 respaldos/
+/CURVAS/
 
 # Entorno
 .env

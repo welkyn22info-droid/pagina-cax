@@ -24,6 +24,7 @@ GRANT UPDATE ON staging.carga TO app_riesgo;         -- ruta_archivo tras guarda
 GRANT UPDATE ON proc.corrida TO app_riesgo;           -- EJECUTANDO -> PENDIENTE_CONFIRMACION/OK/ERROR/ANULADA
 GRANT UPDATE ON audit.destinatario TO app_riesgo;     -- acuse de lectura (visto_en)
 GRANT UPDATE, DELETE ON proc.resultado_borrador TO app_riesgo;  -- confirmar/descartar (decisión 17)
+GRANT SELECT, INSERT ON staging.curva_nodo TO app_riesgo;        -- curvas de mercado (decisión 18)
 
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA core, staging, proc, res, audit TO app_riesgo;
 

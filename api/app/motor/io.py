@@ -33,6 +33,7 @@ def leer_insumo(conn: Connection, tabla: str, fecha_datos, columnas: list[str] |
               WHERE c.fecha_datos = :fecha
                 AND c.estado = 'VALIDADO'
                 AND c.tipo_insumo = :tipo
+                AND c.anulada_en IS NULL
               ORDER BY c.cargado_en DESC LIMIT 1
           )
     """)

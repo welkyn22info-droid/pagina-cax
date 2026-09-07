@@ -8,6 +8,7 @@ import os
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import config
@@ -25,6 +26,7 @@ MODULO_POR_TIPO = {
     "posiciones": "valoracion",
     "precios": "valoracion",
     "flujos_pasivo": "pasivo",
+    "curvas": "curvas",
 }
 
 
@@ -58,7 +60,8 @@ async def crear_carga(
         existente = conn.execute(
             text(
                 "SELECT id, estado::text FROM staging.carga "
-                "WHERE tipo_insumo = :tipo AND fecha_datos = :fecha AND hash_sha256 = :hash"
+                "WHERE tipo_insumo = :tipo AND fecha_datos = :fecha AND hash_sha256 = :hash "
+                "AND anulada_en IS NULL"
             ),
             {"tipo": tipo_insumo, "fecha": fecha_datos, "hash": hash_sha256},
         ).mappings().first()
@@ -165,7 +168,10 @@ def _insertar_filas(conn, tabla: str, df, carga_id: int, fecha_datos: date) -> N
             fila["campos_extra"] = json.dumps(fila["campos_extra"])
         fila["carga_id"] = carga_id
         fila["fecha_datos"] = fecha_datos
-        conn.execute(sql, fila)
+    # Un solo execute con la lista completa (executemany real) en vez de un
+    # roundtrip por fila — con insumos grandes (curvas: ~13.500 filas por
+    # carga) un execute por fila es minutos; en lote son segundos.
+    conn.execute(sql, filas)
 
 
 def _json_o_none(detalle: dict | None) -> str | None:
@@ -198,7 +204,8 @@ def listar_cargas(
         filas = conn.execute(
             text(
                 f"SELECT id, tipo_insumo, fecha_datos, nombre_archivo, filas_leidas, filas_validas, "
-                f"estado::text, cargado_por, cargado_en FROM staging.carga {where} "
+                f"estado::text, cargado_por, cargado_en, anulada_por, anulada_en, motivo_anulacion "
+                f"FROM staging.carga {where} "
                 f"ORDER BY cargado_en DESC LIMIT 200"
             ),
             parametros,
@@ -222,7 +229,7 @@ def cargas_faltantes(fecha: date, usuario: UsuarioSesion = Depends(usuario_actua
                 existe = conn.execute(
                     text(
                         "SELECT 1 FROM staging.carga WHERE tipo_insumo = :tipo AND fecha_datos = :fecha "
-                        "AND estado = 'VALIDADO' LIMIT 1"
+                        "AND estado = 'VALIDADO' AND anulada_en IS NULL LIMIT 1"
                     ),
                     {"tipo": r["tipo_insumo"], "fecha": fecha},
                 ).first()
@@ -248,7 +255,8 @@ def detalle_carga(carga_id: int, usuario: UsuarioSesion = Depends(usuario_actual
         fila = conn.execute(
             text(
                 "SELECT id, tipo_insumo, fecha_datos, nombre_archivo, hash_sha256, filas_leidas, "
-                "filas_validas, estado::text, detalle_error, cargado_por, cargado_en "
+                "filas_validas, estado::text, detalle_error, cargado_por, cargado_en, "
+                "anulada_por, anulada_en, motivo_anulacion "
                 "FROM staging.carga WHERE id = :id"
             ),
             {"id": carga_id},
@@ -256,3 +264,39 @@ def detalle_carga(carga_id: int, usuario: UsuarioSesion = Depends(usuario_actual
     if fila is None:
         raise _error(status.HTTP_404_NOT_FOUND, "no_encontrada", "La carga no existe o no tiene permiso para verla.")
     return dict(fila)
+
+
+class AnularCargaEntrada(BaseModel):
+    motivo: str
+
+
+@router.post("/{carga_id}/anular")
+def anular_carga(carga_id: int, entrada: AnularCargaEntrada, usuario: UsuarioSesion = Depends(usuario_actual)):
+    """Anula una carga ya hecha (decisión 18) — no borra las filas (nunca se
+    borra un insumo, sección 17), solo la marca para que se sepa que ya no
+    es válida y quede fuera de lo que se muestra por defecto."""
+    if not entrada.motivo or not entrada.motivo.strip():
+        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "motivo_requerido", "Debe indicar el motivo de la anulación.")
+
+    with conexion_con_usuario(usuario.id) as conn:
+        fila = conn.execute(
+            text("SELECT tipo_insumo, anulada_en FROM staging.carga WHERE id = :id"), {"id": carga_id}
+        ).mappings().first()
+        if fila is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "no_encontrada", "La carga no existe o no tiene permiso para verla.")
+        if fila["anulada_en"] is not None:
+            raise _error(status.HTTP_409_CONFLICT, "ya_anulada", "Esta carga ya estaba anulada.")
+
+        modulo = MODULO_POR_TIPO.get(fila["tipo_insumo"], fila["tipo_insumo"])
+        _verificar_permiso_cargar(usuario, modulo)
+
+        conn.execute(
+            text(
+                "UPDATE staging.carga SET anulada_por = :uid, anulada_en = now(), motivo_anulacion = :motivo "
+                "WHERE id = :id"
+            ),
+            {"uid": usuario.id, "motivo": entrada.motivo, "id": carga_id},
+        )
+        registrar_evento(conn, usuario.id, "anulacion_carga", "staging.carga", carga_id, {"motivo": entrada.motivo})
+
+    return {"mensaje": "Carga anulada."}

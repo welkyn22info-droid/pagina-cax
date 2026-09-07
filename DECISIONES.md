@@ -290,3 +290,87 @@ Para procesos que no necesitan legado (los maestros de `core.*` —
 emisores, instrumentos, contrapartes, límites de cupo — sección 11), este
 estado no aplica: se siguen cargando directo a su tabla vía los
 formularios de administración, sin pasar por `proc.corrida` en absoluto.
+
+## 18. Curvas de mercado: formato largo, no una columna por fecha, y anulación genérica de cargas
+
+Pedido explícito del usuario, tampoco previsto en las 21 secciones
+originales: cargar curvas de mercado (TES UVR, `CECUVR`) y poder graficarlas
+por nodo (plazo en días) comparando varias fechas a la vez.
+
+**Formato de la tabla:** el archivo real de origen viene *ancho* (una
+columna por fecha, `Curva;Plazo en días;1/08/2026;2/08/2026;...`), pero con
+~13.500 nodos por curva eso son ~13.500 columnas-fecha si se guardara tal
+cual — inviable en SQL (esquema que cambia cada día, imposible de indexar
+o filtrar). Se guarda en formato *largo*: `staging.curva_nodo(carga_id,
+fecha_datos, tipo_curva, nodo, valor)`, una fila por combinación. Un mes
+son ~13.500 × ~21 días hábiles ≈ 280.000 filas — trivial para Postgres con
+el índice `(tipo_curva, fecha_datos, nodo)`; un año de historia son unos
+pocos millones de filas, siguen siendo triviales. El panel de carga diaria
+(hacia adelante) recibe el archivo ya en este formato largo (3 columnas:
+curva, nodo, valor, para una `fecha_datos` elegida en el formulario) — el
+archivo ancho de backfill histórico se pivotea aparte
+(`operacion/cargar_curvas_historico.py`) y se carga día por día contra el
+mismo endpoint `POST /cargas`, así cada día queda con su propia trazabilidad
+(carga_id, hash, usuario) igual que cualquier otro insumo.
+
+Es un insumo más (mismo patrón que `posiciones`/`precios`/`flujos_pasivo`):
+vive en `staging`, no en `res.*`, porque no hay cálculo que lo transforme —
+se sube y se consulta directo para graficar (`GET /curvas`).
+
+**Anulación genérica de `staging.carga`:** el usuario pidió explícitamente
+poder anular una carga de curvas (con quién la anula y por qué). En vez de
+un mecanismo aparte solo para curvas, se agregan `anulada_por/anulada_en/
+motivo_anulacion` a `staging.carga` en general — mismo patrón que ya usa
+`proc.corrida` para anular una corrida (decisión previa, sección 17) — y un
+endpoint `POST /cargas/{id}/anular`, reutilizable para cualquier tipo de
+insumo. `leer_insumo` (`app/motor/io.py`) se ajusta para excluir cargas
+anuladas al resolver "la última carga vigente de esta fecha", igual que ya
+excluye las no `VALIDADO`.
+
+**Permisos:** módulo nuevo `curvas` en `core.permiso`, con la misma
+distribución que los demás insumos (`analista`/`admin` cargan, todos ven).
+
+## 19. `core.puede(...)` sin envolver en una política RLS de una tabla grande es 12,6s; envuelto en `(SELECT ...)`, 150ms
+
+Se midió probando `staging.curva_nodo` en vivo (418.655 filas, la carga real
+de un mes): `GET /curvas/tipos` tardaba tanto que la petición nunca volvía
+—se comprobó con `EXPLAIN ANALYZE` conectado como `app_riesgo` con
+`app.usuario_id` fijado, replicando exactamente la sesión de la API—.
+El plan mostraba `core.puede('curvas','ver')` aplicado como `Filter` dentro
+del `Index Scan`, **evaluado una vez por cada fila leída** (418.655 veces),
+aunque sus dos argumentos son literales y no dependen de ninguna columna de
+`curva_nodo`. Postgres no deduce eso solo porque la función sea `STABLE`:
+sin ayuda, no la trata como una constante precomputable.
+
+**Arreglo:** envolver la llamada en un `SELECT` escalar —
+`USING ((SELECT core.puede('curvas','ver')))` en vez de
+`USING (core.puede('curvas','ver'))`. Eso hace que Postgres la evalúe como
+un `InitPlan` (una sola vez, `loops=1`) en vez de un filtro por fila. Mismo
+`EXPLAIN ANALYZE`, mismos datos: de 12.609ms a 150ms — 84 veces más rápido.
+
+Se aplica solo a `ver_curva_nodo`/`cargar_curva_nodo` (migración 013), que
+son el único caso del sistema con argumentos 100% literales — las demás
+políticas existentes (`ver_carga`, `ver_corrida`, etc.) usan un `CASE` sobre
+una columna de la fila (`tipo_insumo`, `proceso`), así que de todas formas
+deben re-evaluarse por fila; no tienen este problema, y hoy sus tablas son
+chicas (decenas de filas) así que el costo es insignificante. Si una de esas
+tablas crece a un volumen comparable, aplicar el mismo patrón `(SELECT ...)`
+donde el argumento de `core.puede()` deje de depender de la fila.
+
+## 20. Índice único de `staging.carga` no distinguía carga anulada: bloqueaba recargar el mismo archivo
+
+Se descubrió probando el flujo real de anular + volver a cargar (decisión
+18): `ux_carga_hash_fecha` (migración 003) es
+`UNIQUE (tipo_insumo, fecha_datos, hash_sha256)` sin condición — una carga
+anulada sigue ocupando esa combinación, así que el mismo archivo no se
+puede volver a subir para esa fecha aunque la carga original ya no cuente
+para nada (`leer_insumo` y las consultas de curvas ya la ignoran vía
+`anulada_en IS NULL`). Se comprobó en vivo: recargar el archivo de curvas
+del 31/08 tras anularlo fallaba con `UniqueViolation`.
+
+Se agrega la migración 014, que reemplaza el índice por uno **parcial**
+(`WHERE anulada_en IS NULL`): la restricción de "no repetir el mismo
+archivo para esa fecha" sigue vigente entre cargas no anuladas, pero una
+anulada libera el hash. De paso, `crear_carga` (`app/rutas/cargas.py`)
+ajusta su chequeo previo de duplicado para ignorar cargas anuladas
+también — antes solo miraba `tipo_insumo + fecha_datos + hash`.

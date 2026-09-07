@@ -7,6 +7,7 @@ const TIPOS: { valor: string; etiqueta: string }[] = [
   { valor: "posiciones", etiqueta: "Posiciones" },
   { valor: "precios", etiqueta: "Precios" },
   { valor: "flujos_pasivo", etiqueta: "Flujos de pasivo" },
+  { valor: "curvas", etiqueta: "Curvas de mercado" },
 ];
 
 function detectarTipo(nombre: string): string {
@@ -14,6 +15,7 @@ function detectarTipo(nombre: string): string {
   if (n.includes("posicion")) return "posiciones";
   if (n.includes("precio")) return "precios";
   if (n.includes("flujo") || n.includes("pasivo")) return "flujos_pasivo";
+  if (n.includes("curva") || n.includes("uvr") || n.includes("tes")) return "curvas";
   return "posiciones";
 }
 

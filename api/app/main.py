@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.rutas import admin, auth, cargas, corridas, cupos, publicaciones, resultados
+from app.rutas import admin, auth, cargas, corridas, cupos, curvas, publicaciones, resultados
 
 logging.basicConfig(level=logging.INFO, format='{"nivel":"%(levelname)s","modulo":"%(name)s","mensaje":"%(message)s"}')
 
@@ -66,3 +66,4 @@ app.include_router(resultados.router)
 app.include_router(cupos.router)
 app.include_router(publicaciones.router)
 app.include_router(admin.router)
+app.include_router(curvas.router)
