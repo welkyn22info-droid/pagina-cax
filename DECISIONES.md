@@ -515,3 +515,27 @@ corrige para intentar primero `format="%Y-%m-%d"` (como ya hace
 si falla caer a `dayfirst=True` — mismo orden, mismo motivo. Se repitió la
 carga del archivo real de julio ya corregido: 31 fechas, 31×13.505 filas,
 todas con la fecha correcta.
+
+## 25. Agregar fecha a comparar: calendario nativo, no una lista para elegir
+
+El `<select>` de la decisión 24 seguía siendo una lista larga para
+recorrer (62 opciones y creciendo). Se reemplaza por el mismo
+`SelectorFecha` (calendario nativo `<input type="date">`) que ya usan
+Cargas y Procesos — coherente con el resto de la plataforma — más un
+botón "Agregar" explícito. Si la fecha elegida no tiene datos cargados de
+esa curva, se avisa en vez de agregar un chip vacío a la comparación.
+
+**Búsqueda por ID en "Cargas de curvas":** con el volumen que puede llegar
+a acumular una curva (años de historial), encontrar una carga puntual
+para anularla desplazándose por la lista no escala. Se agrega un campo de
+búsqueda que filtra por coincidencia de ID sobre las cargas ya traídas —
+el listado también ahora muestra el `#id` de cada una, que antes no era
+visible en absoluto.
+
+**Varios tipos de curva (CEC, BAAA2, BAAA3, ...) ya funcionan sin tocar
+código.** Es exactamente la razón por la que se mantuvo `tipo_curva` como
+columna en vez de renombrar la tabla a `CECUVR` (decisión 23): `GET
+/curvas/tipos` ya hace `SELECT DISTINCT tipo_curva`, y el pivoteo del
+archivo ancho (`app/ingesta/curvas_ancho.py`) toma el valor de la columna
+"Curva" tal cual venga — en cuanto se cargue un archivo con esos códigos,
+aparecen solos en el selector de tipo de curva de la página.

@@ -6,12 +6,15 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { api } from "@/lib/api";
 import type { SerieCurva } from "@/lib/api";
 import { formatearFecha } from "@/lib/fechas";
+import SelectorFecha from "@/componentes/SelectorFecha";
 
 const COLORES = ["var(--teal)", "var(--amber)", "var(--danger)", "#6366f1", "#8b5cf6", "#ec4899", "#0ea5e9", "#84cc16"];
 
 export default function PaginaCurvas() {
   const [tipoCurva, setTipoCurva] = useState<string>("");
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState<string[]>([]);
+  const [fechaCandidata, setFechaCandidata] = useState("");
+  const [errorFecha, setErrorFecha] = useState<string | null>(null);
 
   const { data: tipos } = useQuery<string[]>({
     queryKey: ["curvas", "tipos"],
@@ -58,16 +61,24 @@ export default function PaginaCurvas() {
   });
   const datosGrafica = nodosOrdenados.map((nodo) => ({ nodo, ...valoresPorNodo[nodo] }));
 
-  function agregarFecha(fecha: string) {
-    if (!fecha) return;
-    setFechasSeleccionadas((actual) => (actual.includes(fecha) ? actual : [...actual, fecha]));
+  function agregarFecha() {
+    if (!fechaCandidata) return;
+    if (fechasSeleccionadas.includes(fechaCandidata)) {
+      setErrorFecha("Esa fecha ya está en la comparación.");
+      return;
+    }
+    if (!(fechasDisponibles || []).includes(fechaCandidata)) {
+      setErrorFecha("No hay datos cargados de esta curva para esa fecha.");
+      return;
+    }
+    setFechasSeleccionadas((actual) => [...actual, fechaCandidata]);
+    setErrorFecha(null);
+    setFechaCandidata("");
   }
 
   function quitarFecha(fecha: string) {
     setFechasSeleccionadas((actual) => actual.filter((f) => f !== fecha));
   }
-
-  const fechasParaAgregar = (fechasDisponibles || []).filter((f) => !fechasSeleccionadas.includes(f));
 
   return (
     <div>
@@ -98,26 +109,21 @@ export default function PaginaCurvas() {
         <>
           <div className="mb-4">
             <p className="text-xs font-medium text-[var(--ink-soft)] mb-2">Fechas a comparar</p>
-            <div className="flex items-center gap-2 mb-2">
-              <select
-                value=""
-                onChange={(e) => agregarFecha(e.target.value)}
-                aria-label="Agregar fecha a comparar"
-                disabled={fechasParaAgregar.length === 0}
-                className="border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-sm disabled:opacity-50"
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <SelectorFecha valor={fechaCandidata} onCambiar={setFechaCandidata} etiqueta="Agregar fecha" />
+              <button
+                onClick={agregarFecha}
+                disabled={!fechaCandidata}
+                className="bg-[var(--teal)] text-white text-sm font-medium rounded-md px-3 py-1.5 disabled:opacity-50"
               >
-                <option value="" disabled>
-                  {fechasParaAgregar.length === 0 ? "No hay más fechas para agregar" : "+ Agregar fecha…"}
-                </option>
-                {fechasParaAgregar.map((f) => (
-                  <option key={f} value={f}>{formatearFecha(f)}</option>
-                ))}
-              </select>
+                Agregar
+              </button>
               <span className="text-xs text-[var(--ink-soft)]">
                 {(fechasDisponibles || []).length} fecha{(fechasDisponibles || []).length === 1 ? "" : "s"} disponible
                 {(fechasDisponibles || []).length === 1 ? "" : "s"} para esta curva
               </span>
             </div>
+            {errorFecha && <p className="text-xs text-[var(--danger)] mb-2">{errorFecha}</p>}
             <div className="flex flex-wrap gap-2">
               {fechasSeleccionadas.map((f) => (
                 <span

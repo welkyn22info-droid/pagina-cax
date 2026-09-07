@@ -10,6 +10,7 @@ export default function HistorialCargasCurvas() {
   const [anulando, setAnulando] = useState<number | null>(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busquedaId, setBusquedaId] = useState("");
   const { data: usuario } = useUsuario();
   const cliente = useQueryClient();
 
@@ -32,15 +33,29 @@ export default function HistorialCargasCurvas() {
     }
   }
 
-  const filas = (cargas || []).slice(0, 100);
+  const idBuscado = busquedaId.trim();
+  const filas = idBuscado
+    ? (cargas || []).filter((c) => String(c.id).includes(idBuscado))
+    : (cargas || []).slice(0, 100);
 
   return (
     <div className="border border-[var(--rule)] rounded-lg bg-white">
-      <div className="px-4 py-3 border-b border-[var(--rule-soft)]">
-        <p className="text-sm font-medium">Cargas de curvas</p>
-        <p className="text-xs text-[var(--ink-soft)]">
-          Solo puede anular quien cargó cada archivo (o un administrador).
-        </p>
+      <div className="px-4 py-3 border-b border-[var(--rule-soft)] flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-medium">Cargas de curvas</p>
+          <p className="text-xs text-[var(--ink-soft)]">
+            Solo puede anular quien cargó cada archivo (o un administrador).
+          </p>
+        </div>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={busquedaId}
+          onChange={(e) => setBusquedaId(e.target.value)}
+          placeholder="Buscar por ID de carga…"
+          aria-label="Buscar por ID de carga"
+          className="border border-[var(--rule)] rounded-md px-2.5 py-1.5 text-xs w-48"
+        />
       </div>
       <div className="divide-y divide-[var(--rule-soft)] max-h-96 overflow-y-auto">
         {filas.length === 0 && (
@@ -52,6 +67,7 @@ export default function HistorialCargasCurvas() {
             <div key={c.id} className="px-4 py-2.5 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
+                  <span className="text-xs text-[var(--ink-soft)] cifra">#{c.id}</span>{" "}
                   <span className={c.anulada_en ? "line-through text-[var(--ink-soft)]" : ""}>
                     {formatearFecha(c.fecha_datos)}
                   </span>
