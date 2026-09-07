@@ -118,7 +118,7 @@ async def crear_carga(
             )
 
         if resultado.aceptado:
-            _insertar_filas(conn, esquema.tabla, resultado.df_validado, carga_id, fecha_datos)
+            _insertar_filas(conn, esquema.tabla, resultado.df_validado, carga_id, fecha_datos, usuario.id)
 
         registrar_evento(
             conn, usuario.id, "carga", "staging.carga", carga_id,
@@ -223,7 +223,7 @@ async def cargar_curvas_multiples(archivo: UploadFile = File(...), usuario: Usua
                     {"ruta": ruta_original, "id": carga_id},
                 )
 
-            _insertar_filas(conn, "staging.curva_nodo", df, carga_id, fecha_datos)
+            _insertar_filas(conn, "staging.curva_nodo", df, carga_id, fecha_datos, usuario.id)
             registrar_evento(
                 conn, usuario.id, "carga", "staging.carga", carga_id,
                 {"tipo_insumo": "curvas", "fecha_datos": fecha_iso, "origen": "carga_multiple"},
@@ -263,7 +263,7 @@ def _guardar_archivo_original(contenido: bytes, tipo_insumo: str, fecha_datos: d
         return None
 
 
-def _insertar_filas(conn, tabla: str, df, carga_id: int, fecha_datos: date) -> None:
+def _insertar_filas(conn, tabla: str, df, carga_id: int, fecha_datos: date, usuario_id: int | None = None) -> None:
     import json
 
     from sqlalchemy import inspect
@@ -274,6 +274,15 @@ def _insertar_filas(conn, tabla: str, df, carga_id: int, fecha_datos: date) -> N
     # de asumir que el DataFrame ya viene exacto.
     esquema, nombre = tabla.split(".")
     columnas_tabla = {c["name"] for c in inspect(conn).get_columns(nombre, schema=esquema)}
+
+    df = df.copy()
+    # usuario_carga (staging.curva_nodo, decisión 23) no tiene un valor
+    # sensato por defecto — se completa aquí si la tabla lo tiene y el
+    # DataFrame no lo trae ya. fecha_cargue y anulado si tienen default en
+    # la propia columna (now() / false) y no hace falta pasarlos.
+    if usuario_id is not None and "usuario_carga" in columnas_tabla and "usuario_carga" not in df.columns:
+        df["usuario_carga"] = usuario_id
+
     columnas = [c for c in df.columns if c in columnas_tabla]
     marcadores = []
     for c in columnas:
@@ -416,6 +425,16 @@ def anular_carga(carga_id: int, entrada: AnularCargaEntrada, usuario: UsuarioSes
             ),
             {"uid": usuario.id, "motivo": entrada.motivo, "id": carga_id},
         )
+
+        # staging.curva_nodo guarda su propia copia de anulado/usuario_anulado
+        # (decisión 23) — se actualiza en la misma transacción para que
+        # nunca quede desincronizada de staging.carga.
+        if fila["tipo_insumo"] == "curvas":
+            conn.execute(
+                text("UPDATE staging.curva_nodo SET anulado = true, usuario_anulado = :uid WHERE carga_id = :id"),
+                {"uid": usuario.id, "id": carga_id},
+            )
+
         registrar_evento(conn, usuario.id, "anulacion_carga", "staging.carga", carga_id, {"motivo": entrada.motivo})
 
     return {"mensaje": "Carga anulada."}

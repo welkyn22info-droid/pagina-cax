@@ -430,3 +430,36 @@ tiempo está en las ~31 idas y vueltas a Postgres (una carga completa por
 fecha), no en la validación — si esto se vuelve un cuello de botella real,
 el siguiente paso sería insertar todas las fechas en una sola sentencia en
 vez de una por fecha.
+
+## 23. `staging.curva_nodo`: columnas de auditoría directas en la tabla, no una vista aparte
+
+Reemplaza la decisión 21: el usuario probó la vista `curva_nodo_auditoria`
+y prefiere las columnas en la misma tabla que ya consulta — no quiere
+acordarse de un objeto aparte. Se agregan `fecha_cargue`, `usuario_carga`,
+`anulado`, `usuario_anulado` directo en `staging.curva_nodo` (migración
+016) y se elimina la vista.
+
+**Nombre de la tabla:** se consultó si convenía renombrarla a `CECUVR`
+(el único tipo de curva cargado hoy). Se mantiene `curva_nodo`: la columna
+`tipo_curva` existe justamente para que quepan varios tipos de curva en la
+misma tabla sin crear una tabla nueva por cada una que llegue — nombrar la
+tabla por un tipo de curva específico habría dejado esa columna redundante
+y forzado una tabla nueva ante cualquier curva futura.
+
+**El riesgo real de duplicar el dato — y cómo se cierra:** estas cuatro
+columnas repiten información que ya vive en `staging.carga` (una vez por
+carga, no ~13.500 veces). Para que `anulado`/`usuario_anulado` no queden
+desincronizadas, `POST /cargas/{id}/anular` (`app/rutas/cargas.py`)
+actualiza `staging.carga` y `staging.curva_nodo` **en la misma
+transacción** — es el único lugar donde esas columnas se escriben tras la
+carga inicial. `fecha_cargue` y `anulado` usan el valor por defecto de la
+columna (`now()` / `false`); `usuario_carga` no tiene un default sensato,
+así que `_insertar_filas` (`app/rutas/cargas.py`) ahora recibe el
+`usuario_id` de quien está cargando y lo agrega al `INSERT` solo si la
+tabla destino tiene esa columna — genérico, no algo especial para curvas.
+
+Requirió una política de `UPDATE` nueva en `staging.curva_nodo` (antes solo
+había `SELECT` e `INSERT`) — mismo patrón permisivo que
+`proc.corrida.actualizar_corrida` (decisión 8): el permiso de fondo ya se
+comprobó en la API antes de llegar aquí. Se agrega también el `GRANT
+UPDATE` correspondiente en `operacion/preparar_rol.sql`.
